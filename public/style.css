@@ -357,12 +357,13 @@ a { color: var(--ink); }
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.55);
-  display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 20px;
 }
+.delete-panel:not([hidden]) { display: flex; }
+.delete-panel[hidden] { display: none; }
 .delete-panel-inner {
   background: var(--paper);
   border: var(--border) solid var(--ink);
