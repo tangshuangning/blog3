@@ -4,6 +4,7 @@
   "main": "src/index.js",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["global_fetch_strictly_public"],
+  "keep_vars": true,
 
   "assets": {
     "directory": "./public",
