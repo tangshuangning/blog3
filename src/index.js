@@ -612,7 +612,10 @@ function editPage(post, isNew) {
       <div class="editor-split">
         <div class="editor-pane">
           <label for="content-input">正文（支持 Markdown，含洛谷风格扩展）</label>
-          <textarea id="content-input" name="content" rows="20" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
+          <div class="editor-source-wrap">
+            <pre id="content-highlight" class="editor-highlight" aria-hidden="true"></pre>
+            <textarea id="content-input" name="content" spellcheck="false" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
+          </div>
         </div>
         <div class="editor-pane">
           <label>实时预览</label>
@@ -775,6 +778,54 @@ function editPage(post, isNew) {
 
       var textarea = document.getElementById('content-input');
       var preview = document.getElementById('content-preview');
+      var highlight = document.getElementById('content-highlight');
+
+      // ── source-pane syntax highlighting ──────────────────────────────
+      // Wraps recognized markdown tokens in colored spans so the left
+      // editor itself shows, e.g., that "# p" is a real heading (space
+      // after #) while "#p" is not (no space) — same distinction Luogu's
+      // editor shows, and similarly for valid vs sloppy $...$ math.
+      function wrap(cls, text) { return '<span class="' + cls + '">' + text + '</span>'; }
+
+      function highlightLine(rawLine) {
+        var line = escapeHtml(rawLine);
+
+        // heading marker: "#"×1-6 followed by whitespace = valid
+        if (/^#{1,6}\\s/.test(line)) {
+          line = line.replace(/^(#{1,6}\\s+)/, function (m) { return wrap('hl-marker', m); });
+        } else if (/^#{1,6}(?!#)/.test(line)) {
+          // "#" at line start with no following space = not a real heading
+          line = line.replace(/^(#{1,6})/, function (m) { return wrap('hl-invalid', m); });
+        }
+
+        // blockquote / list markers
+        line = line.replace(/^(&gt;\\s?)/, function (m) { return wrap('hl-marker', m); });
+        line = line.replace(/^([-*]\\s+)/, function (m) { return wrap('hl-marker', m); });
+        line = line.replace(/^(\\d+\\.\\s+)/, function (m) { return wrap('hl-marker', m); });
+
+        // math: display $$...$$ or inline $...$ (no space right after opening
+        // $ or right before closing $, so "$ $" doesn't count) — one combined
+        // pass so display math isn't re-matched by the inline rule afterward
+        line = line.replace(/\\$\\$[^$]*?\\$\\$|\\$(?!\\s)[^$]*?(?<!\\s)\\$/g, function (m) { return wrap('hl-math', m); });
+
+        // bold / italic / inline code markers
+        line = line.replace(/\\*\\*[^*]+\\*\\*/g, function (m) { return wrap('hl-marker', m); });
+        line = line.replace(/(?<!\\*)\\*[^*]+\\*(?!\\*)/g, function (m) { return wrap('hl-marker', m); });
+        line = line.replace(/\`[^\`]+\`/g, function (m) { return wrap('hl-code', m); });
+
+        return line || '\\n';
+      }
+      function updateHighlight() {
+        var lines = textarea.value.split('\\n');
+        highlight.innerHTML = lines.map(highlightLine).join('\\n');
+        highlight.scrollTop = textarea.scrollTop;
+        highlight.scrollLeft = textarea.scrollLeft;
+      }
+
+      textarea.addEventListener('scroll', function () {
+        highlight.scrollTop = textarea.scrollTop;
+        highlight.scrollLeft = textarea.scrollLeft;
+      });
 
       function updatePreview() {
         preview.innerHTML = mdToHtml(textarea.value || '');
@@ -790,7 +841,9 @@ function editPage(post, isNew) {
       }
 
       textarea.addEventListener('input', updatePreview);
+      textarea.addEventListener('input', updateHighlight);
       updatePreview();
+      updateHighlight();
       // KaTeX loads via deferred <script> tags in <head>, so it may not be
       // ready yet at this point — re-render once more after it finishes.
       document.addEventListener('DOMContentLoaded', updatePreview);
