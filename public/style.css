@@ -237,29 +237,37 @@ a { color: var(--ink); }
 }
 
 /* ── custom cursor ────────────────────────────────────────────────── */
-/* A small circular dot that follows the mouse alongside the normal
-   system cursor (the system cursor is never hidden). */
-.cursor-dot {
+/* Dot + ring pair using mix-blend-mode: difference so it inverts against
+   whatever it's over — a common neo-brutalist cursor treatment. Positioned
+   via JS (translate3d), hidden below the md breakpoint and on touch/
+   reduced-motion (JS bails out entirely in those cases, matching the
+   reference component's behavior). */
+.cursor-dot,
+.cursor-ring {
   position: fixed;
   top: 0;
   left: 0;
-  width: 16px;
-  height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--ink);
-  background: var(--pink);
   pointer-events: none;
   z-index: 9999;
-  transform: translate(-50%, -50%);
-  transition: transform 0.06s ease-out, width 0.15s ease, height 0.15s ease, background 0.15s ease;
+  mix-blend-mode: difference;
+  will-change: transform;
+  transform: translate3d(-100px, -100px, 0);
   display: none;
 }
-.has-custom-cursor .cursor-dot { display: block; }
-.cursor-dot.is-active {
-  width: 34px;
-  height: 34px;
-  background: var(--yellow);
-  border-radius: 50%;
+.cursor-dot {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+}
+.cursor-ring {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #fff;
+}
+@media (min-width: 768px) {
+  .has-custom-cursor .cursor-dot,
+  .has-custom-cursor .cursor-ring { display: block; }
 }
 
 /* ── post grid / cards ────────────────────────────────────────────── */
