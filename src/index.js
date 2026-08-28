@@ -1080,8 +1080,41 @@ function editPage(post, isNew) {
       window.closeLinkModal = closeLinkModal;
       window.confirmLinkInsert = confirmLinkInsert;
 
+      // Resize + re-encode a pasted image so the resulting data URI stays
+      // small — a raw pasted screenshot can easily be several MB; capping
+      // the longest side at 1200px and encoding as JPEG (quality 0.82)
+      // typically shrinks it by 5-20x with barely noticeable quality loss.
+      function compressImageFile(file, callback) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var img = new Image();
+          img.onload = function () {
+            var maxDim = 1200;
+            var w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+              else { w = Math.round(w * maxDim / h); h = maxDim; }
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            // white background first, since JPEG has no transparency —
+            // pasted screenshots are almost always opaque anyway
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            callback(canvas.toDataURL('image/jpeg', 0.82));
+          };
+          img.onerror = function () { callback(e.target.result); }; // fallback: use the raw file
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
       // paste an image from the clipboard straight into the URL field —
-      // converts it to a data URI so no separate image host is needed
+      // compresses it and converts it to a data URI so no separate image
+      // host is needed
       var linkUrlInput = document.getElementById('link-url');
       if (linkUrlInput) {
         linkUrlInput.addEventListener('paste', function (e) {
@@ -1092,11 +1125,10 @@ function editPage(post, isNew) {
               var blob = cd.items[i].getAsFile();
               if (!blob) continue;
               e.preventDefault();
-              var reader = new FileReader();
-              reader.onload = function (ev) {
-                linkUrlInput.value = ev.target.result;
-              };
-              reader.readAsDataURL(blob);
+              linkUrlInput.value = '压缩中…';
+              compressImageFile(blob, function (dataUrl) {
+                linkUrlInput.value = dataUrl;
+              });
               break;
             }
           }
