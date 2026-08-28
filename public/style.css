@@ -1006,7 +1006,7 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   font-size: 0.78rem;
   margin-bottom: 6px;
 }
-.comment-meta strong { text-transform: uppercase; }
+.comment-meta strong { }
 .comment-meta time { color: var(--gray); }
 .comment-body { margin: 0; line-height: 1.6; }
 .comment-empty { color: var(--gray); font-family: var(--font-mono); font-size: 0.85rem; }
@@ -1047,7 +1047,7 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   border-bottom: 2px solid var(--rule, var(--paper-alt));
 }
 .admin-user-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 160px; }
-.admin-user-info strong { font-family: var(--font-display); text-transform: uppercase; font-size: 1rem; }
+.admin-user-info strong { font-family: var(--font-display); font-size: 1rem; }
 .admin-role-badge {
   font-family: var(--font-mono);
   font-size: 0.7rem;
