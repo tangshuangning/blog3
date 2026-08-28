@@ -310,7 +310,7 @@ function homePage(posts, meta) {
     <button type="button" class="btn btn-chaos" onclick="toggleChaos()">🎲 混乱模式</button>
   </section>
 
-  <form class="search-bar" action="/" method="get">
+  <form class="search-bar" action="/" method="get" onsubmit="return handleSearchSubmit(event)">
     <input type="text" name="q" value="${escapeHtml(q)}" placeholder="搜索标题 / 标签 / 正文……" class="search-input" />
     <button type="submit" class="btn btn-search">🔍 搜索</button>
     ${q ? '<a href="/" class="btn btn-ghost">清空</a>' : ''}
@@ -321,16 +321,53 @@ function homePage(posts, meta) {
   ${paginationControls({ page, totalPages, q })}
 
   <script>
-    function toggleChaos() {
-      const grid = document.getElementById('post-grid');
-      const cards = grid.querySelectorAll('.post-card');
-      const colors = ['var(--pink)', 'var(--green)', 'var(--blue)', 'var(--yellow)'];
-      cards.forEach((card) => {
-        const rot = (Math.random() * 6 - 3).toFixed(2);
-        const color = colors[Math.floor(Math.random() * colors.length)];
+    var CHAOS_KEY = 'wildblog-chaos';
+
+    function handleSearchSubmit(e) {
+      var input = e.target.querySelector('input[name="q"]');
+      if (!input.value.trim()) {
+        e.preventDefault();
+        window.location.href = '/';
+        return false;
+      }
+      return true;
+    }
+
+    function applyChaos() {
+      var grid = document.getElementById('post-grid');
+      if (!grid) return;
+      var colors = ['var(--pink)', 'var(--green)', 'var(--blue)', 'var(--yellow)'];
+      grid.querySelectorAll('.post-card').forEach(function (card) {
+        var rot = (Math.random() * 6 - 3).toFixed(2);
+        var color = colors[Math.floor(Math.random() * colors.length)];
         card.style.transform = 'rotate(' + rot + 'deg)';
         card.style.setProperty('--shadow-color', color);
       });
+    }
+
+    function resetChaos() {
+      var grid = document.getElementById('post-grid');
+      if (!grid) return;
+      grid.querySelectorAll('.post-card').forEach(function (card) {
+        card.style.transform = '';
+        card.style.removeProperty('--shadow-color');
+      });
+    }
+
+    function toggleChaos() {
+      if (sessionStorage.getItem(CHAOS_KEY) === '1') {
+        sessionStorage.removeItem(CHAOS_KEY);
+        resetChaos();
+      } else {
+        sessionStorage.setItem(CHAOS_KEY, '1');
+        applyChaos();
+      }
+    }
+
+    // Re-apply chaos mode automatically after any full page load
+    // (search, pagination, etc.) if it was left switched on.
+    if (sessionStorage.getItem(CHAOS_KEY) === '1') {
+      applyChaos();
     }
   </script>`;
   return layout({ title: q ? `搜索 · ${q}` : '首页', body, active: 'home' });
