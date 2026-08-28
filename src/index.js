@@ -1676,6 +1676,23 @@ export default {
         return html(editPage(post, false, user));
       }
 
+      // GET /api/debug/admin-check?username=xxx — diagnostic only, never
+      // reveals the actual ADMIN_USERNAMES value, just whether it's set
+      // and whether the given username currently matches it.
+      if (request.method === 'GET' && pathname === '/api/debug/admin-check') {
+        const testUsername = url.searchParams.get('username') || '';
+        const raw = env.ADMIN_USERNAMES || '';
+        const parsed = raw.split(',').map((s) => normalizeUsername(s)).filter(Boolean);
+        return json({
+          adminUsernamesConfigured: !!raw,
+          rawLength: raw.length,
+          parsedCount: parsed.length,
+          testUsername,
+          normalizedTestUsername: normalizeUsername(testUsername),
+          wouldBeAdmin: testUsername ? isAdminUsername(env, testUsername) : null,
+        });
+      }
+
       // POST /api/auth/register — username must not already exist
       if (request.method === 'POST' && pathname === '/api/auth/register') {
         const body = await request.json();
