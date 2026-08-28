@@ -429,16 +429,18 @@ a { color: var(--ink); }
 .btn-ghost { background: var(--paper); }
 .btn-delete-confirm { background: var(--pink); }
 
-.prose { line-height: 1.8; font-size: 1.05rem; }
+.prose { line-height: 1.75; font-size: 1.05rem; }
 .prose h1, .prose h2, .prose h3 {
   font-family: var(--font-display);
-  margin-top: 2.2em;
-  margin-bottom: 0.6em;
+  margin-top: 1.4em;
+  margin-bottom: 0.5em;
   text-transform: uppercase;
+  line-height: 1.25;
 }
+.prose h1 { font-size: 1.6rem; }
 .prose h2 { font-size: 1.35rem; }
 .prose h3 { font-size: 1.05rem; }
-.prose p { margin: 1.1em 0; }
+.prose p { margin: 0.85em 0; }
 .prose a { color: var(--ink); text-decoration-color: var(--blue); text-decoration-thickness: 2px; }
 .prose strong { background: var(--yellow); padding: 0 3px; }
 .prose blockquote {
@@ -624,6 +626,52 @@ a { color: var(--ink); }
 .editor-split textarea {
   min-height: 460px;
 }
+
+/* Highlight overlay: a <pre> sits behind the textarea showing colored
+   syntax tokens; the textarea itself has transparent text so only its
+   caret and selection are visible, with the highlighted markup showing
+   through underneath. Both share identical font metrics so characters
+   line up exactly. */
+.editor-source-wrap {
+  position: relative;
+  min-height: 460px;
+}
+.editor-source-wrap textarea,
+.editor-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  border: var(--border) solid var(--ink);
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: auto;
+}
+.editor-source-wrap textarea {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+  resize: vertical;
+  z-index: 1;
+}
+.editor-source-wrap textarea::selection {
+  background: rgba(69, 183, 209, 0.35);
+}
+.editor-highlight {
+  background: var(--paper);
+  color: var(--ink);
+  pointer-events: none;
+  z-index: 0;
+}
+.hl-marker { color: var(--blue); font-weight: 700; }
+.hl-invalid { color: var(--gray); text-decoration: underline wavy var(--pink); text-decoration-thickness: 1px; }
+.hl-math { color: #8b5cf6; background: rgba(139, 92, 246, 0.08); }
+.hl-code { color: var(--ink); background: var(--paper-alt); }
+
 .editor-preview {
   min-height: 460px;
   max-height: 620px;
