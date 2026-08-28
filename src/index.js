@@ -17,7 +17,7 @@ function escapeHtml(str) {
 
 function normalizeUrl(url) {
   const trimmed = url.trim();
-  if (/^(https?:|mailto:|tel:|#|\/)/i.test(trimmed)) return trimmed;
+  if (/^(https?:|mailto:|tel:|data:|#|\/)/i.test(trimmed)) return trimmed;
   return 'https://' + trimmed;
 }
 
@@ -740,7 +740,7 @@ function editPage(post, isNew) {
       }
       function normalizeUrl(url) {
         var trimmed = url.trim();
-        if (/^(https?:|mailto:|tel:|#|\\/)/i.test(trimmed)) return trimmed;
+        if (/^(https?:|mailto:|tel:|data:|#|\\/)/i.test(trimmed)) return trimmed;
         return 'https://' + trimmed;
       }
       function inline(md) {
@@ -1060,6 +1060,7 @@ function editPage(post, isNew) {
         linkModalIsImage = isImage;
         document.getElementById('link-modal-title').textContent = isImage ? '插入图片' : '插入链接';
         document.getElementById('link-name').placeholder = isImage ? '图片描述' : '链接名称';
+        document.getElementById('link-url').placeholder = isImage ? 'https://，或直接粘贴剪贴板图片（Ctrl+V）' : 'https://';
         document.getElementById('link-name').value = '';
         document.getElementById('link-url').value = '';
         document.getElementById('link-modal').hidden = false;
@@ -1078,6 +1079,29 @@ function editPage(post, isNew) {
       window.openLinkModal = openLinkModal;
       window.closeLinkModal = closeLinkModal;
       window.confirmLinkInsert = confirmLinkInsert;
+
+      // paste an image from the clipboard straight into the URL field —
+      // converts it to a data URI so no separate image host is needed
+      var linkUrlInput = document.getElementById('link-url');
+      if (linkUrlInput) {
+        linkUrlInput.addEventListener('paste', function (e) {
+          var cd = e.clipboardData || window.clipboardData;
+          if (!cd || !cd.items) return;
+          for (var i = 0; i < cd.items.length; i++) {
+            if (cd.items[i].type && cd.items[i].type.indexOf('image') !== -1) {
+              var blob = cd.items[i].getAsFile();
+              if (!blob) continue;
+              e.preventDefault();
+              var reader = new FileReader();
+              reader.onload = function (ev) {
+                linkUrlInput.value = ev.target.result;
+              };
+              reader.readAsDataURL(blob);
+              break;
+            }
+          }
+        });
+      }
 
       // ── resizable panes: drag the vertical divider to change the
       // left/right width ratio, drag the horizontal one to change height ──
