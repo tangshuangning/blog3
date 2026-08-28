@@ -616,36 +616,60 @@ function editPage(post, isNew) {
           <input name="tags" value="${escapeHtml((p.tags || []).join(', '))}" placeholder="随笔, 深夜" />
         </label>
       </div>
-      <div class="editor-split">
-        <div class="editor-pane">
-          <label for="content-input">正文（支持 Markdown，含洛谷风格扩展）</label>
-          <div class="editor-toolbar" role="toolbar" aria-label="格式工具栏">
-            <button type="button" class="tb-btn" title="加粗" data-tb="bold"><b>B</b></button>
-            <button type="button" class="tb-btn" title="斜体" data-tb="italic"><i>i</i></button>
-            <button type="button" class="tb-btn" title="删除线" data-tb="strike"><s>S</s></button>
-            <button type="button" class="tb-btn" title="行内代码" data-tb="inline-code">&lt;/&gt;</button>
-            <span class="tb-sep"></span>
-            <button type="button" class="tb-btn" title="数学公式" data-tb="math">∑</button>
-            <button type="button" class="tb-btn" title="代码块" data-tb="code-block">{ }</button>
-            <span class="tb-sep"></span>
-            <button type="button" class="tb-btn" title="链接" data-tb="link">🔗</button>
-            <button type="button" class="tb-btn" title="图片" data-tb="image">🖼</button>
-            <button type="button" class="tb-btn" title="表格" data-tb="table">▦</button>
-            <span class="tb-sep"></span>
-            <button type="button" class="tb-btn" title="无序列表" data-tb="ul">•</button>
-            <button type="button" class="tb-btn" title="有序列表" data-tb="ol">1.</button>
-            <button type="button" class="tb-btn" title="任务列表" data-tb="task">☑</button>
-            <button type="button" class="tb-btn" title="引用" data-tb="quote">"</button>
+      <div class="editor-split-wrap">
+        <div class="editor-split" id="editor-split">
+          <div class="editor-pane" id="editor-pane-left">
+            <label for="content-input">正文（支持 Markdown，含洛谷风格扩展）</label>
+            <div class="editor-toolbar" role="toolbar" aria-label="格式工具栏">
+              <button type="button" class="tb-btn" data-tooltip="加粗" data-tb="bold"><b>B</b></button>
+              <button type="button" class="tb-btn" data-tooltip="斜体" data-tb="italic"><i>I</i></button>
+              <button type="button" class="tb-btn" data-tooltip="删除线" data-tb="strike"><s>S</s></button>
+              <button type="button" class="tb-btn" data-tooltip="行内代码" data-tb="inline-code">
+                <svg viewBox="0 0 20 20" width="16" height="16"><polyline points="7,5 3,10 7,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="13,5 17,10 13,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <span class="tb-sep"></span>
+              <button type="button" class="tb-btn" data-tooltip="数学公式" data-tb="math">
+                <svg viewBox="0 0 20 20" width="16" height="16"><polyline points="2,11 5,14 8,4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="8" y1="4" x2="18" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="代码块" data-tb="code-block">
+                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><polyline points="5,8 8,10 5,12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><line x1="10" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </button>
+              <span class="tb-sep"></span>
+              <button type="button" class="tb-btn" data-tooltip="链接" data-tb="link">
+                <svg viewBox="0 0 20 20" width="16" height="16"><path d="M8 12a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4 4l-1 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 8a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4-4l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="图片" data-tb="image">
+                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="8" r="1.5" fill="currentColor"/><polyline points="3,15 8,10 12,13 17,7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="表格" data-tb="table">
+                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" fill="none" stroke="currentColor" stroke-width="2"/><line x1="2" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="1.6"/><line x1="2" y1="13" x2="18" y2="13" stroke="currentColor" stroke-width="1.6"/><line x1="9" y1="3" x2="9" y2="17" stroke="currentColor" stroke-width="1.6"/></svg>
+              </button>
+              <span class="tb-sep"></span>
+              <button type="button" class="tb-btn" data-tooltip="无序列表" data-tb="ul">
+                <svg viewBox="0 0 20 20" width="16" height="16"><circle cx="3.5" cy="5" r="1.5" fill="currentColor"/><line x1="8" y1="5" x2="17" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="10" r="1.5" fill="currentColor"/><line x1="8" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="15" r="1.5" fill="currentColor"/><line x1="8" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="有序列表" data-tb="ol">
+                <svg viewBox="0 0 20 20" width="16" height="16"><text x="0" y="7" font-size="6" fill="currentColor" font-family="monospace">1</text><line x1="8" y1="5" x2="17" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><text x="0" y="12" font-size="6" fill="currentColor" font-family="monospace">2</text><line x1="8" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><text x="0" y="17" font-size="6" fill="currentColor" font-family="monospace">3</text><line x1="8" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="任务列表" data-tb="task">
+                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><polyline points="3.5,6 5,7.5 8.5,3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="4" x2="18" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="2" y="12" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><line x1="13" y1="15" x2="18" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="tb-btn" data-tooltip="引用" data-tb="quote">
+                <svg viewBox="0 0 20 20" width="16" height="16"><line x1="4" y1="3" x2="4" y2="17" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><line x1="9" y1="6" x2="17" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="editor-source-wrap">
+              <pre id="content-highlight" class="editor-highlight" aria-hidden="true"></pre>
+              <textarea id="content-input" name="content" spellcheck="false" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
+            </div>
           </div>
-          <div class="editor-source-wrap">
-            <pre id="content-highlight" class="editor-highlight" aria-hidden="true"></pre>
-            <textarea id="content-input" name="content" spellcheck="false" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
+          <div class="editor-v-divider" id="editor-v-divider" role="separator" aria-orientation="vertical" aria-label="拖动调整左右宽度"></div>
+          <div class="editor-pane" id="editor-pane-right">
+            <label>实时预览</label>
+            <div id="content-preview" class="prose editor-preview"></div>
           </div>
         </div>
-        <div class="editor-pane">
-          <label>实时预览</label>
-          <div id="content-preview" class="prose editor-preview"></div>
-        </div>
+        <div class="editor-h-divider" id="editor-h-divider" role="separator" aria-orientation="horizontal" aria-label="拖动调整高度"></div>
       </div>
 
       <div id="code-modal" class="delete-panel" hidden>
@@ -671,6 +695,18 @@ function editPage(post, isNew) {
           <div class="delete-panel-actions">
             <button type="button" class="btn btn-ghost" onclick="closeCodeModal()">取消</button>
             <button type="button" class="btn btn-save" onclick="confirmCodeInsert()">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="link-modal" class="delete-panel" hidden>
+        <div class="delete-panel-inner code-modal-inner">
+          <p class="delete-warning" id="link-modal-title">插入链接</p>
+          <input type="text" id="link-name" class="code-lang-select" placeholder="链接名称" />
+          <input type="text" id="link-url" class="code-lang-select" placeholder="https://" />
+          <div class="delete-panel-actions">
+            <button type="button" class="btn btn-ghost" onclick="closeLinkModal()">取消</button>
+            <button type="button" class="btn btn-save" onclick="confirmLinkInsert()">确定</button>
           </div>
         </div>
       </div>
@@ -909,51 +945,43 @@ function editPage(post, isNew) {
       document.addEventListener('DOMContentLoaded', updatePreview);
 
       // ── toolbar: insert/wrap markdown at the cursor ─────────────────────
+      // Uses document.execCommand('insertText', ...) rather than setting
+      // textarea.value directly — direct .value assignment wipes the
+      // browser's native undo history, so Ctrl+Z would stop working after
+      // any toolbar click. execCommand keeps it intact. Falls back to
+      // direct assignment only if execCommand is unavailable.
       function refresh() {
         textarea.dispatchEvent(new Event('input'));
+      }
+
+      function insertAtSelection(text) {
+        textarea.focus();
+        var ok = false;
+        try { ok = document.execCommand('insertText', false, text); } catch (e) { ok = false; }
+        if (!ok) {
+          var start = textarea.selectionStart, end = textarea.selectionEnd;
+          var value = textarea.value;
+          textarea.value = value.slice(0, start) + text + value.slice(end);
+          textarea.setSelectionRange(start + text.length, start + text.length);
+        }
+        refresh();
       }
 
       function wrapSelection(before, after, placeholder) {
         var start = textarea.selectionStart;
         var end = textarea.selectionEnd;
-        var value = textarea.value;
-        var selected = value.slice(start, end) || placeholder || '';
-        var inserted = before + selected + after;
-        textarea.value = value.slice(0, start) + inserted + value.slice(end);
+        var selected = textarea.value.slice(start, end) || placeholder || '';
+        insertAtSelection(before + selected + after);
         var selStart = start + before.length;
         var selEnd = selStart + selected.length;
-        textarea.focus();
         textarea.setSelectionRange(selStart, selEnd);
-        refresh();
-      }
-
-      function insertLinkLike(isImage) {
-        var start = textarea.selectionStart;
-        var end = textarea.selectionEnd;
-        var value = textarea.value;
-        var selected = value.slice(start, end) || (isImage ? '图片描述' : '链接文字');
-        var prefix = isImage ? '![' : '[';
-        var url = 'https://';
-        var inserted = prefix + selected + '](' + url + ')';
-        textarea.value = value.slice(0, start) + inserted + value.slice(end);
-        var urlStart = start + prefix.length + selected.length + 2;
-        var urlEnd = urlStart + url.length;
-        textarea.focus();
-        textarea.setSelectionRange(urlStart, urlEnd);
-        refresh();
       }
 
       function insertBlock(text) {
         var start = textarea.selectionStart;
-        var end = textarea.selectionEnd;
         var value = textarea.value;
         var needsLeadingNewline = start > 0 && value[start - 1] !== '\\n';
-        var inserted = (needsLeadingNewline ? '\\n' : '') + text;
-        textarea.value = value.slice(0, start) + inserted + value.slice(end);
-        var pos = start + inserted.length;
-        textarea.focus();
-        textarea.setSelectionRange(pos, pos);
-        refresh();
+        insertAtSelection((needsLeadingNewline ? '\\n' : '') + text);
       }
 
       function prefixLines(prefixFn) {
@@ -964,13 +992,10 @@ function editPage(post, isNew) {
         var lineEnd = value.indexOf('\\n', end);
         if (lineEnd === -1) lineEnd = value.length;
         var block = value.slice(lineStart, lineEnd);
-        var lines = block.split('\\n');
-        var newLines = lines.map(prefixFn);
-        var newBlock = newLines.join('\\n');
-        textarea.value = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
-        textarea.focus();
+        var newBlock = block.split('\\n').map(prefixFn).join('\\n');
+        textarea.setSelectionRange(lineStart, lineEnd);
+        insertAtSelection(newBlock);
         textarea.setSelectionRange(lineStart, lineStart + newBlock.length);
-        refresh();
       }
 
       var TOOLBAR_ACTIONS = {
@@ -980,8 +1005,8 @@ function editPage(post, isNew) {
         'inline-code': function () { wrapSelection('\`', '\`', 'code'); },
         'math': function () { wrapSelection('$$', '$$', ''); },
         'code-block': function () { openCodeModal(); },
-        'link': function () { insertLinkLike(false); },
-        'image': function () { insertLinkLike(true); },
+        'link': function () { openLinkModal(false); },
+        'image': function () { openLinkModal(true); },
         'table': function () { insertBlock('| 列1 | 列2 |\\n|:---|:---:|\\n| 内容 | 内容 |\\n'); },
         'ul': function () { prefixLines(function (l) { return '- ' + l; }); },
         'ol': function () { prefixLines(function (l, i) { return (i + 1) + '. ' + l; }); },
@@ -1014,6 +1039,92 @@ function editPage(post, isNew) {
       window.openCodeModal = openCodeModal;
       window.closeCodeModal = closeCodeModal;
       window.confirmCodeInsert = confirmCodeInsert;
+
+      // ── link / image modal ───────────────────────────────────────────
+      var linkModalIsImage = false;
+      function openLinkModal(isImage) {
+        linkModalIsImage = isImage;
+        document.getElementById('link-modal-title').textContent = isImage ? '插入图片' : '插入链接';
+        document.getElementById('link-name').placeholder = isImage ? '图片描述' : '链接名称';
+        document.getElementById('link-name').value = '';
+        document.getElementById('link-url').value = '';
+        document.getElementById('link-modal').hidden = false;
+        document.getElementById('link-name').focus();
+      }
+      function closeLinkModal() {
+        document.getElementById('link-modal').hidden = true;
+      }
+      function confirmLinkInsert() {
+        var name = document.getElementById('link-name').value || (linkModalIsImage ? '图片描述' : '链接文字');
+        var url = document.getElementById('link-url').value || 'https://';
+        var prefix = linkModalIsImage ? '![' : '[';
+        insertAtSelection(prefix + name + '](' + url + ')');
+        closeLinkModal();
+      }
+      window.openLinkModal = openLinkModal;
+      window.closeLinkModal = closeLinkModal;
+      window.confirmLinkInsert = confirmLinkInsert;
+
+      // ── resizable panes: drag the vertical divider to change the
+      // left/right width ratio, drag the horizontal one to change height ──
+      (function () {
+        var split = document.getElementById('editor-split');
+        var vDivider = document.getElementById('editor-v-divider');
+        var hDivider = document.getElementById('editor-h-divider');
+        var paneLeft = document.getElementById('editor-pane-left');
+        var paneRight = document.getElementById('editor-pane-right');
+        var sourceWrap = document.querySelector('.editor-source-wrap');
+        var previewEl = document.getElementById('content-preview');
+        if (!split || !vDivider || !hDivider) return;
+
+        var draggingV = false;
+        vDivider.addEventListener('mousedown', function (e) {
+          draggingV = true;
+          vDivider.classList.add('is-dragging');
+          document.body.classList.add('is-col-resizing');
+          e.preventDefault();
+        });
+
+        var draggingH = false;
+        var startY = 0, startHeight = 0;
+        hDivider.addEventListener('mousedown', function (e) {
+          draggingH = true;
+          startY = e.clientY;
+          startHeight = sourceWrap.getBoundingClientRect().height;
+          hDivider.classList.add('is-dragging');
+          document.body.classList.add('is-row-resizing');
+          e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', function (e) {
+          if (draggingV) {
+            var rect = split.getBoundingClientRect();
+            var pct = ((e.clientX - rect.left) / rect.width) * 100;
+            pct = Math.max(20, Math.min(80, pct));
+            paneLeft.style.flex = '0 0 ' + pct + '%';
+            paneRight.style.flex = '1 1 0';
+          }
+          if (draggingH) {
+            var delta = e.clientY - startY;
+            var newHeight = Math.max(220, startHeight + delta);
+            sourceWrap.style.height = newHeight + 'px';
+            if (previewEl) previewEl.style.height = newHeight + 'px';
+          }
+        });
+
+        window.addEventListener('mouseup', function () {
+          if (draggingV) {
+            draggingV = false;
+            vDivider.classList.remove('is-dragging');
+            document.body.classList.remove('is-col-resizing');
+          }
+          if (draggingH) {
+            draggingH = false;
+            hDivider.classList.remove('is-dragging');
+            document.body.classList.remove('is-row-resizing');
+          }
+        });
+      })();
     })();
   </script>
 
