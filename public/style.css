@@ -606,16 +606,23 @@ a { color: var(--ink); }
 }
 .editor-form textarea { font-family: var(--font-mono); line-height: 1.6; }
 
+.editor-split-wrap {
+  display: flex;
+  flex-direction: column;
+}
 .editor-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  align-items: start;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
 }
 .editor-pane {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0; /* critical: without this, wide content (e.g. long code
+                   lines) forces the flex item wider than its share,
+                   squeezing the other pane out */
+  flex: 1 1 0;
 }
 .editor-pane > label {
   font-family: var(--font-mono);
@@ -625,9 +632,70 @@ a { color: var(--ink); }
   letter-spacing: 0.04em;
   color: var(--gray);
 }
-.editor-split textarea {
-  min-height: 460px;
+
+/* draggable divider between the two panes — drag left/right to resize */
+.editor-v-divider {
+  flex: 0 0 14px;
+  align-self: stretch;
+  margin-top: 28px; /* align with the top of the panes, below their labels */
+  cursor: col-resize;
+  position: relative;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ink) 0, var(--ink) 4px,
+    transparent 4px, transparent 8px
+  );
+  background-position: center;
+  background-repeat: repeat-y;
+  background-size: 2px 100%;
 }
+.editor-v-divider::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.editor-v-divider:hover, .editor-v-divider.is-dragging {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--blue) 0, var(--blue) 4px,
+    transparent 4px, transparent 8px
+  );
+  background-position: center;
+  background-repeat: repeat-y;
+  background-size: 3px 100%;
+}
+
+/* draggable divider below both panes — drag up/down to resize height */
+.editor-h-divider {
+  height: 14px;
+  margin: 6px auto 0;
+  width: 100%;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.editor-h-divider::before {
+  content: '';
+  width: 60px;
+  height: 4px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--ink) 0, var(--ink) 6px,
+    transparent 6px, transparent 10px
+  );
+}
+.editor-h-divider:hover::before, .editor-h-divider.is-dragging::before {
+  background: repeating-linear-gradient(
+    to right,
+    var(--blue) 0, var(--blue) 6px,
+    transparent 6px, transparent 10px
+  );
+  height: 5px;
+}
+body.is-col-resizing { cursor: col-resize !important; user-select: none; }
+body.is-row-resizing { cursor: row-resize !important; user-select: none; }
+body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
 
 /* Highlight overlay: a <pre> sits behind the textarea showing colored
    syntax tokens; the textarea itself has transparent text so only its
@@ -637,6 +705,7 @@ a { color: var(--ink); }
 .editor-source-wrap {
   position: relative;
   min-height: 460px;
+  height: 460px;
 }
 .editor-source-wrap textarea,
 .editor-highlight {
@@ -657,7 +726,7 @@ a { color: var(--ink); }
   background: transparent;
   color: transparent;
   caret-color: var(--ink);
-  resize: vertical;
+  resize: none;
   z-index: 1;
 }
 .editor-source-wrap textarea::selection {
@@ -686,6 +755,7 @@ a { color: var(--ink); }
   background: var(--paper-alt);
 }
 .tb-btn {
+  position: relative;
   min-width: 32px;
   height: 32px;
   padding: 0 8px;
@@ -707,6 +777,49 @@ a { color: var(--ink); }
   background: var(--yellow);
 }
 .tb-btn:active { transform: translate(1px, 1px); box-shadow: none; }
+
+/* prominent instant tooltip — no native-title delay, high contrast */
+.tb-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 5px 9px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.08s ease, transform 0.08s ease;
+  z-index: 30;
+}
+.tb-btn[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.08s ease;
+  z-index: 30;
+}
+.tb-btn[data-tooltip]:hover::after,
+.tb-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.tb-btn[data-tooltip]:hover::before,
+.tb-btn[data-tooltip]:focus-visible::before {
+  opacity: 1;
+}
 .tb-sep {
   width: 2px;
   align-self: stretch;
@@ -758,9 +871,9 @@ a { color: var(--ink); }
 .prose del { opacity: 0.65; }
 
 .editor-preview {
-  min-height: 460px;
-  max-height: 620px;
+  height: 460px;
   overflow-y: auto;
+  overflow-x: auto;
   padding: 16px 18px;
   background: var(--paper);
   border: var(--border) solid var(--ink);
@@ -796,7 +909,8 @@ a { color: var(--ink); }
 
 @media (max-width: 640px) {
   .editor-row { grid-template-columns: 1fr; }
-  .editor-split { grid-template-columns: 1fr; }
+  .editor-split { flex-direction: column; }
+  .editor-v-divider { display: none; }
   .site-header { padding: 16px 18px; }
   .not-found h1 { font-size: 4rem; }
 }
