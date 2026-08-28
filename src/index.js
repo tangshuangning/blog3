@@ -19,6 +19,7 @@ function inline(md) {
   return md
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
@@ -149,7 +150,13 @@ function renderLines(lines) {
     }
     if ((m = line.match(/^[-*]\s+(.*)$/))) {
       if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
-      html += `<li>${inline(m[1])}</li>`;
+      const task = m[1].match(/^\[( |x|X)\]\s+(.*)$/);
+      if (task) {
+        const checked = task[1].toLowerCase() === 'x' ? ' checked' : '';
+        html += `<li class="task-item"><input type="checkbox" disabled${checked}> ${inline(task[2])}</li>`;
+      } else {
+        html += `<li>${inline(m[1])}</li>`;
+      }
       i++; continue;
     }
     if ((m = line.match(/^\d+\.\s+(.*)$/))) {
@@ -612,6 +619,24 @@ function editPage(post, isNew) {
       <div class="editor-split">
         <div class="editor-pane">
           <label for="content-input">正文（支持 Markdown，含洛谷风格扩展）</label>
+          <div class="editor-toolbar" role="toolbar" aria-label="格式工具栏">
+            <button type="button" class="tb-btn" title="加粗" data-tb="bold"><b>B</b></button>
+            <button type="button" class="tb-btn" title="斜体" data-tb="italic"><i>i</i></button>
+            <button type="button" class="tb-btn" title="删除线" data-tb="strike"><s>S</s></button>
+            <button type="button" class="tb-btn" title="行内代码" data-tb="inline-code">&lt;/&gt;</button>
+            <span class="tb-sep"></span>
+            <button type="button" class="tb-btn" title="数学公式" data-tb="math">∑</button>
+            <button type="button" class="tb-btn" title="代码块" data-tb="code-block">{ }</button>
+            <span class="tb-sep"></span>
+            <button type="button" class="tb-btn" title="链接" data-tb="link">🔗</button>
+            <button type="button" class="tb-btn" title="图片" data-tb="image">🖼</button>
+            <button type="button" class="tb-btn" title="表格" data-tb="table">▦</button>
+            <span class="tb-sep"></span>
+            <button type="button" class="tb-btn" title="无序列表" data-tb="ul">•</button>
+            <button type="button" class="tb-btn" title="有序列表" data-tb="ol">1.</button>
+            <button type="button" class="tb-btn" title="任务列表" data-tb="task">☑</button>
+            <button type="button" class="tb-btn" title="引用" data-tb="quote">"</button>
+          </div>
           <div class="editor-source-wrap">
             <pre id="content-highlight" class="editor-highlight" aria-hidden="true"></pre>
             <textarea id="content-input" name="content" spellcheck="false" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
@@ -622,6 +647,34 @@ function editPage(post, isNew) {
           <div id="content-preview" class="prose editor-preview"></div>
         </div>
       </div>
+
+      <div id="code-modal" class="delete-panel" hidden>
+        <div class="delete-panel-inner code-modal-inner">
+          <p class="delete-warning">插入代码块</p>
+          <select id="code-lang" class="code-lang-select">
+            <option value="cpp">C++</option>
+            <option value="c">C</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="csharp">C#</option>
+            <option value="go">Go</option>
+            <option value="rust">Rust</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+            <option value="sql">SQL</option>
+            <option value="bash">Bash</option>
+            <option value="plaintext">纯文本</option>
+          </select>
+          <textarea id="code-input" class="code-modal-textarea" rows="8" placeholder="粘贴代码……"></textarea>
+          <div class="delete-panel-actions">
+            <button type="button" class="btn btn-ghost" onclick="closeCodeModal()">取消</button>
+            <button type="button" class="btn btn-save" onclick="confirmCodeInsert()">确定</button>
+          </div>
+        </div>
+      </div>
+
       <label>管理密码
         <input name="password" type="password" required placeholder="输入密码才能保存" autocomplete="current-password" />
       </label>
@@ -645,6 +698,7 @@ function editPage(post, isNew) {
         return md
           .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
           .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+          .replace(/~~([^~]+)~~/g, '<del>$1</del>')
           .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
           .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
       }
@@ -750,7 +804,13 @@ function editPage(post, isNew) {
           }
           if ((m = line.match(/^[-*]\\s+(.*)$/))) {
             if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
-            html += '<li>' + inline(m[1]) + '</li>';
+            var task = m[1].match(/^\\[( |x|X)\\]\\s+(.*)$/);
+            if (task) {
+              var checked = task[1].toLowerCase() === 'x' ? ' checked' : '';
+              html += '<li class="task-item"><input type="checkbox" disabled' + checked + '> ' + inline(task[2]) + '</li>';
+            } else {
+              html += '<li>' + inline(m[1]) + '</li>';
+            }
             i++; continue;
           }
           if ((m = line.match(/^\\d+\\.\\s+(.*)$/))) {
@@ -847,6 +907,113 @@ function editPage(post, isNew) {
       // KaTeX loads via deferred <script> tags in <head>, so it may not be
       // ready yet at this point — re-render once more after it finishes.
       document.addEventListener('DOMContentLoaded', updatePreview);
+
+      // ── toolbar: insert/wrap markdown at the cursor ─────────────────────
+      function refresh() {
+        textarea.dispatchEvent(new Event('input'));
+      }
+
+      function wrapSelection(before, after, placeholder) {
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var value = textarea.value;
+        var selected = value.slice(start, end) || placeholder || '';
+        var inserted = before + selected + after;
+        textarea.value = value.slice(0, start) + inserted + value.slice(end);
+        var selStart = start + before.length;
+        var selEnd = selStart + selected.length;
+        textarea.focus();
+        textarea.setSelectionRange(selStart, selEnd);
+        refresh();
+      }
+
+      function insertLinkLike(isImage) {
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var value = textarea.value;
+        var selected = value.slice(start, end) || (isImage ? '图片描述' : '链接文字');
+        var prefix = isImage ? '![' : '[';
+        var url = 'https://';
+        var inserted = prefix + selected + '](' + url + ')';
+        textarea.value = value.slice(0, start) + inserted + value.slice(end);
+        var urlStart = start + prefix.length + selected.length + 2;
+        var urlEnd = urlStart + url.length;
+        textarea.focus();
+        textarea.setSelectionRange(urlStart, urlEnd);
+        refresh();
+      }
+
+      function insertBlock(text) {
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var value = textarea.value;
+        var needsLeadingNewline = start > 0 && value[start - 1] !== '\\n';
+        var inserted = (needsLeadingNewline ? '\\n' : '') + text;
+        textarea.value = value.slice(0, start) + inserted + value.slice(end);
+        var pos = start + inserted.length;
+        textarea.focus();
+        textarea.setSelectionRange(pos, pos);
+        refresh();
+      }
+
+      function prefixLines(prefixFn) {
+        var start = textarea.selectionStart;
+        var end = textarea.selectionEnd;
+        var value = textarea.value;
+        var lineStart = value.lastIndexOf('\\n', start - 1) + 1;
+        var lineEnd = value.indexOf('\\n', end);
+        if (lineEnd === -1) lineEnd = value.length;
+        var block = value.slice(lineStart, lineEnd);
+        var lines = block.split('\\n');
+        var newLines = lines.map(prefixFn);
+        var newBlock = newLines.join('\\n');
+        textarea.value = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
+        textarea.focus();
+        textarea.setSelectionRange(lineStart, lineStart + newBlock.length);
+        refresh();
+      }
+
+      var TOOLBAR_ACTIONS = {
+        'bold': function () { wrapSelection('**', '**', '加粗文字'); },
+        'italic': function () { wrapSelection('*', '*', '斜体文字'); },
+        'strike': function () { wrapSelection('~~', '~~', '删除线文字'); },
+        'inline-code': function () { wrapSelection('\`', '\`', 'code'); },
+        'math': function () { wrapSelection('$$', '$$', ''); },
+        'code-block': function () { openCodeModal(); },
+        'link': function () { insertLinkLike(false); },
+        'image': function () { insertLinkLike(true); },
+        'table': function () { insertBlock('| 列1 | 列2 |\\n|:---|:---:|\\n| 内容 | 内容 |\\n'); },
+        'ul': function () { prefixLines(function (l) { return '- ' + l; }); },
+        'ol': function () { prefixLines(function (l, i) { return (i + 1) + '. ' + l; }); },
+        'task': function () { prefixLines(function (l) { return '- [ ] ' + l; }); },
+        'quote': function () { prefixLines(function (l) { return '> ' + l; }); },
+      };
+
+      document.querySelectorAll('.tb-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var action = TOOLBAR_ACTIONS[btn.dataset.tb];
+          if (action) action();
+        });
+      });
+
+      // ── code-block modal ─────────────────────────────────────────────
+      function openCodeModal() {
+        document.getElementById('code-input').value = '';
+        document.getElementById('code-modal').hidden = false;
+        document.getElementById('code-input').focus();
+      }
+      function closeCodeModal() {
+        document.getElementById('code-modal').hidden = true;
+      }
+      function confirmCodeInsert() {
+        var lang = document.getElementById('code-lang').value;
+        var code = document.getElementById('code-input').value;
+        insertBlock('\`\`\`' + lang + '\\n' + code + '\\n\`\`\`\\n');
+        closeCodeModal();
+      }
+      window.openCodeModal = openCodeModal;
+      window.closeCodeModal = closeCodeModal;
+      window.confirmCodeInsert = confirmCodeInsert;
     })();
   </script>
 
