@@ -15,13 +15,20 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function normalizeUrl(url) {
+  const trimmed = url.trim();
+  if (/^(https?:|mailto:|tel:|#|\/)/i.test(trimmed)) return trimmed;
+  return 'https://' + trimmed;
+}
+
 function inline(md) {
   return md
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => `<img src="${normalizeUrl(url)}" alt="${alt}">`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => `<a href="${normalizeUrl(url)}" target="_blank" rel="noopener">${text}</a>`);
 }
 
 function splitTableRow(line) {
@@ -454,7 +461,7 @@ function homePage(posts, meta) {
 
   const cards = posts.length
     ? posts.map((p, i) => `
-      <a href="/posts/${encodeURIComponent(p.slug)}" class="post-card tilt-${i % 3}">
+      <a href="/posts/${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" class="post-card tilt-${i % 3}">
         <span class="stamp">已发布</span>
         <div class="post-card-date">${fmtDate(p.pubDate)}</div>
         <h2 class="post-card-title">${escapeHtml(p.title)}</h2>
@@ -540,6 +547,9 @@ function postPage(post) {
   const contentHtml = mdToHtml(post.content || '');
   const body = `
   <article class="post-detail">
+    <a href="/" class="home-link" data-tooltip="返回首页">
+      <svg viewBox="0 0 20 20" width="18" height="18"><path d="M3 10 L10 3 L17 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9 V17 H15 V9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><rect x="8.3" y="12" width="3.4" height="5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+    </a>
     <div class="post-detail-meta">
       <time>${fmtDate(post.pubDate)}</time>
       ${tagChips(post.tags)}
@@ -554,8 +564,6 @@ function postPage(post) {
     <p class="post-detail-desc">${escapeHtml(post.description || '')}</p>
 
     <div class="prose">${contentHtml}</div>
-
-    <a href="/" class="back-link">&larr; 返回首页</a>
   </article>
 
   <div id="delete-panel" class="delete-panel" hidden>
@@ -730,13 +738,19 @@ function editPage(post, isNew) {
       function escapeHtml(str) {
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
+      function normalizeUrl(url) {
+        var trimmed = url.trim();
+        if (/^(https?:|mailto:|tel:|#|\\/)/i.test(trimmed)) return trimmed;
+        return 'https://' + trimmed;
+      }
       function inline(md) {
         return md
           .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
           .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
           .replace(/~~([^~]+)~~/g, '<del>$1</del>')
           .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
-          .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+          .replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, function (m, alt, url) { return '<img src="' + normalizeUrl(url) + '" alt="' + alt + '">'; })
+          .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, function (m, text, url) { return '<a href="' + normalizeUrl(url) + '" target="_blank" rel="noopener">' + text + '</a>'; });
       }
       function splitTableRow(line) {
         var t = line.trim();
