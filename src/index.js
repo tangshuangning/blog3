@@ -248,17 +248,42 @@ ${body}
     rafId = requestAnimationFrame(animate);
   })();
 
-  // Random hover colors for buttons and post cards — deliberately a
-  // different palette from chaos-mode's pink/green/blue/yellow so the two
-  // effects never overlap in color.
+  // Random hover colors for buttons and post cards — a bigger palette than
+  // chaos-mode's, kept deliberately disjoint from it, plus two guarantees:
+  // the picked shadow color never matches the element's original shadow
+  // (black by default, or one of the chaos colors), and the shadow color
+  // never matches the text color picked alongside it.
   (function () {
-    var HOVER_PALETTE = ['#a855f7', '#ff8c42', '#a8ff60', '#22d3ee', '#e930ff', '#14b8a6'];
-    function pick() { return HOVER_PALETTE[Math.floor(Math.random() * HOVER_PALETTE.length)]; }
+    var HOVER_PALETTE = [
+      '#a855f7', // purple
+      '#ff8c42', // orange
+      '#a8ff60', // lime
+      '#22d3ee', // cyan
+      '#e930ff', // magenta
+      '#14b8a6', // teal
+      '#fb7185', // rose
+      '#6366f1', // indigo
+      '#fbbf24', // amber
+      '#34d399', // emerald
+      '#38bdf8', // sky
+      '#c026d3', // fuchsia
+    ];
+    // "Original" shadow colors that a hover pick must never collide with:
+    // black (the default) and the four chaos-mode colors.
+    var BASE_SHADOW_COLORS = ['#000000', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7dc6f'];
+
+    function pickFrom(pool) {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
 
     document.querySelectorAll('.btn, .btn-nav-new, .page-btn, .post-card').forEach(function (el) {
       el.addEventListener('mouseenter', function () {
-        el.style.setProperty('--hover-shadow-color', pick());
-        el.style.setProperty('--hover-text-color', pick());
+        var shadowPool = HOVER_PALETTE.filter(function (c) { return BASE_SHADOW_COLORS.indexOf(c) === -1; });
+        var shadowColor = pickFrom(shadowPool);
+        var textPool = HOVER_PALETTE.filter(function (c) { return c !== shadowColor; });
+        var textColor = pickFrom(textPool);
+        el.style.setProperty('--hover-shadow-color', shadowColor);
+        el.style.setProperty('--hover-text-color', textColor);
       });
       el.addEventListener('mouseleave', function () {
         el.style.removeProperty('--hover-shadow-color');
