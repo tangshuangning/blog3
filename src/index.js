@@ -267,7 +267,11 @@ function searchPosts(posts, query) {
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
-function layout({ title, body, active = '' }) {
+function layout({ title, body, active = '', user = null }) {
+  const navAuth = user
+    ? `<span class="nav-user" data-tooltip="${user.role === 'admin' ? '管理员' : '普通用户'}">${escapeHtml(user.name || user.email)}</span>
+       <a href="#" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/');return false;" class="${active === 'login' ? 'is-active' : ''}">退出</a>`
+    : `<a href="/login" class="${active === 'login' ? 'is-active' : ''}">登录</a>`;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -306,7 +310,9 @@ function layout({ title, body, active = '' }) {
   </a>
   <nav class="site-nav">
     <a href="/" class="${active === 'home' ? 'is-active' : ''}">首页</a>
-    <a href="/new" class="btn-nav-new ${active === 'new' ? 'is-active' : ''}">+ 发新帖</a>
+    ${user ? `<a href="/new" class="btn-nav-new ${active === 'new' ? 'is-active' : ''}">+ 发新帖</a>` : ''}
+    ${user && user.role === 'admin' ? `<a href="/admin/users" class="${active === 'admin-users' ? 'is-active' : ''}">账号管理</a>` : ''}
+    ${navAuth}
   </nav>
 </header>
 <main class="site-main">
@@ -455,7 +461,7 @@ function paginationControls(meta) {
   </nav>`;
 }
 
-function homePage(posts, meta) {
+function homePage(posts, meta, user) {
   const { q = '', page = 1, totalPages = 1, total = 0 } = meta || {};
   const startIndex = (page - 1) * PAGE_SIZE;
 
@@ -463,14 +469,14 @@ function homePage(posts, meta) {
     ? posts.map((p, i) => `
       <a href="/posts/${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" class="post-card tilt-${i % 3}">
         <span class="stamp">已发布</span>
-        <div class="post-card-date">${fmtDate(p.pubDate)}</div>
+        <div class="post-card-date">${fmtDate(p.pubDate)} · ${escapeHtml(p.authorName || '匿名')}</div>
         <h2 class="post-card-title">${escapeHtml(p.title)}</h2>
         <p class="post-card-desc">${escapeHtml(p.description || '')}</p>
         ${tagChips(p.tags)}
       </a>`).join('')
     : q
       ? `<div class="empty-state"><p>没搜到「${escapeHtml(q)}」相关的内容，换个词试试。</p></div>`
-      : `<div class="empty-state"><p>信号还没接通。点右上角「+ 发新帖」写第一篇。</p></div>`;
+      : `<div class="empty-state"><p>信号还没接通。${user ? '点右上角「+ 发新帖」写第一篇。' : '<a href="/login">登录</a>后可以写第一篇。'}</p></div>`;
 
   const body = `
   <section class="hero">
@@ -540,11 +546,43 @@ function homePage(posts, meta) {
       applyChaos();
     }
   </script>`;
-  return layout({ title: q ? `搜索 · ${q}` : '首页', body, active: 'home' });
+  return layout({ title: q ? `搜索 · ${q}` : '首页', body, active: 'home', user });
 }
 
-function postPage(post) {
+function commentItem(c) {
+  return `<div class="comment-item" id="comment-${c.id}">
+    <div class="comment-meta">
+      <strong>${escapeHtml(c.authorName || c.authorEmail)}</strong>
+      <time>${fmtDate(c.createdAt)}</time>
+    </div>
+    <p class="comment-body">${escapeHtml(c.content)}</p>
+  </div>`;
+}
+
+function postPage(post, user, comments) {
   const contentHtml = mdToHtml(post.content || '');
+  const canEdit = canEditPost(user, post);
+
+  const PUBLIC_COMMENT_LIMIT = 3;
+  const visibleComments = user ? comments : comments.slice(0, PUBLIC_COMMENT_LIMIT);
+  const hiddenCount = comments.length - visibleComments.length;
+
+  const commentsHtml = comments.length
+    ? visibleComments.map(commentItem).join('')
+    : `<p class="comment-empty">还没有评论，${user ? '来写第一条吧' : '登录后可以发表第一条'}。</p>`;
+
+  const moreNotice = !user && hiddenCount > 0
+    ? `<p class="comment-more-notice">还有 ${hiddenCount} 条评论，<a href="/login">登录</a>后查看全部。</p>`
+    : '';
+
+  const commentForm = user
+    ? `<form id="comment-form" class="comment-form">
+        <textarea id="comment-input" rows="3" placeholder="说点什么……" required></textarea>
+        <button type="submit" class="btn btn-sm btn-save">发表评论</button>
+        <p id="comment-error" class="form-error" hidden></p>
+      </form>`
+    : `<p class="comment-login-prompt"><a href="/login">登录</a>后可以发表评论。</p>`;
+
   const body = `
   <article class="post-detail">
     <a href="/" class="home-link" data-tooltip="返回首页">
@@ -552,31 +590,38 @@ function postPage(post) {
     </a>
     <div class="post-detail-meta">
       <time>${fmtDate(post.pubDate)}</time>
+      <span class="post-author">作者：${escapeHtml(post.authorName || '匿名')}</span>
       ${tagChips(post.tags)}
     </div>
     <div class="post-title-row">
       <h1 class="post-detail-title">${escapeHtml(post.title)}</h1>
-      <div class="post-actions">
+      ${canEdit ? `<div class="post-actions">
         <a href="/edit/${encodeURIComponent(post.slug)}" class="btn btn-sm btn-edit" title="编辑">✎ 编辑</a>
         <button type="button" class="btn btn-sm btn-delete" title="删除" onclick="openDeletePanel()">🗑 删除</button>
-      </div>
+      </div>` : ''}
     </div>
     <p class="post-detail-desc">${escapeHtml(post.description || '')}</p>
 
     <div class="prose">${contentHtml}</div>
+
+    <section class="comments-section">
+      <h2 class="comments-title">评论 ${comments.length ? `(${comments.length})` : ''}</h2>
+      <div id="comments-list">${commentsHtml}</div>
+      ${moreNotice}
+      ${commentForm}
+    </section>
   </article>
 
-  <div id="delete-panel" class="delete-panel" hidden>
+  ${canEdit ? `<div id="delete-panel" class="delete-panel" hidden>
     <div class="delete-panel-inner">
       <p class="delete-warning">⚠ 这会永久删除《${escapeHtml(post.title)}》，无法撤销。</p>
-      <input id="delete-password" type="password" placeholder="管理密码" autocomplete="current-password" />
       <div class="delete-panel-actions">
         <button type="button" class="btn btn-ghost" onclick="closeDeletePanel()">取消</button>
         <button type="button" class="btn btn-delete-confirm" onclick="confirmDelete('${post.slug}')">确认删除</button>
       </div>
       <p id="delete-error" class="form-error" hidden></p>
     </div>
-  </div>
+  </div>` : ''}
 
   <script>
     function openDeletePanel() { document.getElementById('delete-panel').hidden = false; }
@@ -585,26 +630,42 @@ function postPage(post) {
       document.getElementById('delete-error').hidden = true;
     }
     async function confirmDelete(slug) {
-      const password = document.getElementById('delete-password').value;
       const err = document.getElementById('delete-error');
-      const res = await fetch('/api/posts/' + encodeURIComponent(slug) + '/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
+      const res = await fetch('/api/posts/' + encodeURIComponent(slug) + '/delete', { method: 'POST' });
       if (res.ok) {
         window.location.href = '/';
       } else {
         const text = await res.text();
-        err.textContent = text || '删除失败，请检查密码';
+        err.textContent = text || '删除失败';
         err.hidden = false;
       }
     }
+
+    var commentForm = document.getElementById('comment-form');
+    if (commentForm) {
+      commentForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var input = document.getElementById('comment-input');
+        var err = document.getElementById('comment-error');
+        err.hidden = true;
+        const res = await fetch('/api/posts/${encodeURIComponent(post.slug)}/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: input.value }),
+        });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          err.textContent = (await res.text()) || '发表失败';
+          err.hidden = false;
+        }
+      });
+    }
   </script>`;
-  return layout({ title: post.title, body });
+  return layout({ title: post.title, body, user });
 }
 
-function editPage(post, isNew) {
+function editPage(post, isNew, user) {
   const p = post || { slug: '', title: '', description: '', tags: [], pubDate: new Date().toISOString().slice(0, 10), content: '' };
   const body = `
   <section class="editor">
@@ -719,9 +780,6 @@ function editPage(post, isNew) {
         </div>
       </div>
 
-      <label>管理密码
-        <input name="password" type="password" required placeholder="输入密码才能保存" autocomplete="current-password" />
-      </label>
       <div class="editor-actions">
         <button type="submit" class="btn btn-save">${isNew ? '⚡ 发布' : '⚡ 保存修改'}</button>
         <a href="${isNew ? '/' : '/posts/' + encodeURIComponent(p.slug)}" class="btn btn-ghost">取消</a>
@@ -1211,7 +1269,6 @@ function editPage(post, isNew) {
         pubDate: fd.get('pubDate'),
         tags: fd.get('tags').split(',').map(s => s.trim()).filter(Boolean),
         content: fd.get('content'),
-        password: fd.get('password'),
       };
       const isNew = ${isNew ? 'true' : 'false'};
       const url = isNew ? '/api/posts' : '/api/posts/${encodeURIComponent(p.slug)}';
@@ -1224,21 +1281,148 @@ function editPage(post, isNew) {
         const data = await res.json();
         window.location.href = '/posts/' + encodeURIComponent(data.slug);
       } else {
-        err.textContent = await res.text() || '保存失败，请检查密码';
+        err.textContent = await res.text() || '保存失败';
         err.hidden = false;
       }
     });
   </script>`;
-  return layout({ title: isNew ? '新建帖子' : `编辑 · ${p.title}`, body, active: isNew ? 'new' : '' });
+  return layout({ title: isNew ? '新建帖子' : `编辑 · ${p.title}`, body, active: isNew ? 'new' : '', user });
 }
 
-function notFoundPage() {
+function notFoundPage(user) {
   const body = `<section class="not-found">
     <h1>404</h1>
     <p>信号丢失，这个页面不存在。</p>
     <a href="/" class="btn btn-edit">回到首页</a>
   </section>`;
-  return layout({ title: '未找到', body });
+  return layout({ title: '未找到', body, user });
+}
+
+function loginPage() {
+  const body = `
+  <section class="login-section">
+    <div class="hero-tag">SIGN IN / SIGN UP</div>
+    <h1 class="login-title">登录 / 注册</h1>
+    <p class="login-sub">用邮箱收验证码，没有账号会自动帮你注册一个。</p>
+
+    <form id="email-step" class="login-form">
+      <label>邮箱
+        <input id="login-email" type="email" required placeholder="you@example.com" autocomplete="email" />
+      </label>
+      <button type="submit" class="btn btn-save">发送验证码</button>
+      <p id="email-error" class="form-error" hidden></p>
+    </form>
+
+    <form id="code-step" class="login-form" hidden>
+      <label>验证码
+        <input id="login-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required placeholder="6 位数字" autocomplete="one-time-code" />
+      </label>
+      <label>昵称（可选，评论/文章会显示这个名字）
+        <input id="login-name" type="text" placeholder="给自己起个名字" />
+      </label>
+      <button type="submit" class="btn btn-save">验证并登录</button>
+      <button type="button" class="btn btn-ghost" onclick="backToEmailStep()">换个邮箱</button>
+      <p id="code-error" class="form-error" hidden></p>
+      <p class="login-hint">验证码 10 分钟内有效，没收到可以返回重新发送。</p>
+    </form>
+  </section>
+
+  <script>
+    var pendingEmail = '';
+    var emailStep = document.getElementById('email-step');
+    var codeStep = document.getElementById('code-step');
+
+    function backToEmailStep() {
+      codeStep.hidden = true;
+      emailStep.hidden = false;
+    }
+
+    emailStep.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var email = document.getElementById('login-email').value.trim();
+      var err = document.getElementById('email-error');
+      err.hidden = true;
+      var res = await fetch('/api/auth/request-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      });
+      if (res.ok) {
+        pendingEmail = email;
+        emailStep.hidden = true;
+        codeStep.hidden = false;
+        document.getElementById('login-code').focus();
+      } else {
+        err.textContent = (await res.text()) || '发送失败，请检查邮箱地址';
+        err.hidden = false;
+      }
+    });
+
+    codeStep.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var code = document.getElementById('login-code').value.trim();
+      var name = document.getElementById('login-name').value.trim();
+      var err = document.getElementById('code-error');
+      err.hidden = true;
+      var res = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, code: code, name: name }),
+      });
+      if (res.ok) {
+        window.location.href = '/';
+      } else {
+        err.textContent = (await res.text()) || '验证码不对，再试一次';
+        err.hidden = false;
+      }
+    });
+  </script>`;
+  return layout({ title: '登录', body, active: 'login' });
+}
+
+function adminUsersPage(users, query, currentUser) {
+  const rows = users.length
+    ? users.map((u) => `
+      <div class="admin-user-row">
+        <div class="admin-user-info">
+          <strong>${escapeHtml(u.name || u.email)}</strong>
+          <span class="admin-user-email">${escapeHtml(u.email)}</span>
+        </div>
+        <span class="admin-role-badge admin-role-${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
+        ${u.email === currentUser.email
+          ? `<span class="admin-self-note">（你自己）</span>`
+          : `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.email}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`
+        }
+      </div>`).join('')
+    : `<p class="comment-empty">没有匹配的账号。</p>`;
+
+  const body = `
+  <section class="admin-users-section">
+    <div class="hero-tag">ADMIN / ACCOUNTS</div>
+    <h1 class="login-title">账号管理</h1>
+    <form class="search-bar" action="/admin/users" method="get">
+      <input type="text" name="q" value="${escapeHtml(query)}" placeholder="按昵称或邮箱搜索……" class="search-input" />
+      <button type="submit" class="btn btn-search">🔍 搜索</button>
+      ${query ? '<a href="/admin/users" class="btn btn-ghost">清空</a>' : ''}
+    </form>
+    <div class="admin-user-list">${rows}</div>
+  </section>
+
+  <script>
+    async function toggleRole(email, newRole) {
+      const res = await fetch('/api/admin/users/' + encodeURIComponent(email) + '/role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }),
+      });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        alert((await res.text()) || '操作失败');
+      }
+    }
+  </script>`;
+  return layout({ title: '账号管理', body, active: 'admin-users', user: currentUser });
 }
 
 // ── KV helpers ───────────────────────────────────────────────────────────
@@ -1248,6 +1432,151 @@ function notFoundPage() {
 // To avoid that lag, we maintain our own index — a single KV key holding a
 // JSON array of slugs — and always read/write it with get()/put(), never
 // list().
+// ── auth: cookies, sessions, users, email verification codes ─────────────
+function parseCookies(request) {
+  const header = request.headers.get('Cookie') || '';
+  const cookies = {};
+  header.split(';').forEach((pair) => {
+    const idx = pair.indexOf('=');
+    if (idx === -1) return;
+    const k = pair.slice(0, idx).trim();
+    const v = pair.slice(idx + 1).trim();
+    if (k) cookies[k] = decodeURIComponent(v);
+  });
+  return cookies;
+}
+
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+function sessionCookieHeader(token) {
+  return `session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`;
+}
+function clearSessionCookieHeader() {
+  return `session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
+async function getSessionUser(request, env) {
+  const token = parseCookies(request).session;
+  if (!token) return null;
+  const session = await env.POSTS.get(`session:${token}`, 'json');
+  if (!session) return null;
+  // Always re-read the live user record rather than trusting whatever
+  // role/name was cached in the session at login time — otherwise an
+  // admin promotion wouldn't take effect until the target logs out and
+  // back in again.
+  const freshUser = await getUser(env, session.email);
+  if (!freshUser) return null;
+  return { email: freshUser.email, role: freshUser.role, name: freshUser.name };
+}
+
+function normalizeEmail(email) {
+  return (email || '').trim().toLowerCase();
+}
+
+const USERS_INDEX_KEY = 'users-index';
+
+async function getUsersIndex(env) {
+  const raw = await env.POSTS.get(USERS_INDEX_KEY, 'json');
+  return Array.isArray(raw) ? raw : [];
+}
+async function addToUsersIndex(env, email) {
+  const emails = await getUsersIndex(env);
+  const norm = normalizeEmail(email);
+  if (!emails.includes(norm)) {
+    emails.push(norm);
+    await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(emails));
+  }
+}
+
+async function getUser(env, email) {
+  return env.POSTS.get(`user:${normalizeEmail(email)}`, 'json');
+}
+async function saveUser(env, user) {
+  await env.POSTS.put(`user:${normalizeEmail(user.email)}`, JSON.stringify(user));
+  await addToUsersIndex(env, user.email);
+}
+async function listUsers(env) {
+  const emails = await getUsersIndex(env);
+  const users = await Promise.all(emails.map((e) => getUser(env, e)));
+  return users.filter(Boolean).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+}
+function searchUsers(users, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return users;
+  return users.filter((u) =>
+    (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
+  );
+}
+function isAdminEmail(env, email) {
+  const list = (env.ADMIN_EMAILS || '').split(',').map((s) => normalizeEmail(s)).filter(Boolean);
+  return list.includes(normalizeEmail(email));
+}
+
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+async function requestVerificationCode(env, email) {
+  const code = generateCode();
+  await env.POSTS.put(`verify:${normalizeEmail(email)}`, JSON.stringify({ code }), { expirationTtl: 600 });
+  return code;
+}
+async function checkVerificationCode(env, email, code) {
+  const key = `verify:${normalizeEmail(email)}`;
+  const record = await env.POSTS.get(key, 'json');
+  if (!record || record.code !== String(code).trim()) return false;
+  await env.POSTS.delete(key);
+  return true;
+}
+
+async function sendVerificationEmail(env, email, code) {
+  if (!env.RESEND_API_KEY) {
+    // No email service configured yet — log to the server console so this
+    // is still testable locally (`wrangler dev`), but never leak the code
+    // to the client/browser.
+    console.log(`[dev] verification code for ${email}: ${code}`);
+    return;
+  }
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: env.RESEND_FROM || 'onboarding@resend.dev',
+      to: [email],
+      subject: `验证码：${code}`,
+      html: `<p>你的验证码是 <strong style="font-size:22px">${code}</strong>，10 分钟内有效。</p>`,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error('邮件发送失败：' + errText);
+  }
+}
+
+// ── comments ────────────────────────────────────────────────────────────
+async function getComments(env, slug) {
+  const list = await env.POSTS.get(`comments:${slug}`, 'json');
+  return Array.isArray(list) ? list : [];
+}
+async function addComment(env, slug, comment) {
+  const list = await getComments(env, slug);
+  list.push(comment);
+  await env.POSTS.put(`comments:${slug}`, JSON.stringify(list));
+}
+async function deleteComment(env, slug, commentId, requester) {
+  const list = await getComments(env, slug);
+  const idx = list.findIndex((c) => c.id === commentId);
+  if (idx === -1) return false;
+  const comment = list[idx];
+  if (comment.authorEmail !== requester.email && requester.role !== 'admin') return false;
+  list.splice(idx, 1);
+  await env.POSTS.put(`comments:${slug}`, JSON.stringify(list));
+  return true;
+}
+
+// ── posts (KV helpers) ─────────────────────────────────────────────────
 const INDEX_KEY = 'index';
 
 async function getIndex(env) {
@@ -1291,10 +1620,12 @@ async function savePost(env, slug, data) {
 async function deletePost(env, slug) {
   await env.POSTS.delete(`post:${slug}`);
   await removeFromIndex(env, slug);
+  await env.POSTS.delete(`comments:${slug}`);
 }
 
-function checkPassword(env, password) {
-  return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+function canEditPost(user, post) {
+  if (!user) return false;
+  return user.role === 'admin' || user.email === post.authorEmail;
 }
 
 // ── router ───────────────────────────────────────────────────────────────
@@ -1309,6 +1640,8 @@ export default {
     }
 
     try {
+      const user = await getSessionUser(request, env);
+
       // GET /
       if (request.method === 'GET' && pathname === '/') {
         const q = url.searchParams.get('q') || '';
@@ -1321,37 +1654,123 @@ export default {
         const page = Math.min(Math.max(1, requestedPage), totalPages);
         const pagePosts = posts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-        return html(homePage(pagePosts, { q, page, totalPages, total }));
+        return html(homePage(pagePosts, { q, page, totalPages, total }, user));
       }
 
-      // GET /new
+      // GET /login
+      if (request.method === 'GET' && pathname === '/login') {
+        if (user) return redirect('/');
+        return html(loginPage());
+      }
+
+      // GET /admin/users — admin only
+      if (request.method === 'GET' && pathname === '/admin/users') {
+        if (!user) return redirect('/login');
+        if (user.role !== 'admin') return text('没有权限', 403);
+        const q = url.searchParams.get('q') || '';
+        const allUsers = await listUsers(env);
+        const filtered = q.trim() ? searchUsers(allUsers, q) : allUsers;
+        return html(adminUsersPage(filtered, q, user));
+      }
+
+      // POST /api/admin/users/:email/role — admin only
+      let m = pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
+      if (request.method === 'POST' && m) {
+        if (!user) return text('请先登录', 401);
+        if (user.role !== 'admin') return text('没有权限', 403);
+        const targetEmail = decodeURIComponent(m[1]);
+        const body = await request.json();
+        if (body.role !== 'admin' && body.role !== 'user') return text('角色参数不对', 400);
+        const target = await getUser(env, targetEmail);
+        if (!target) return text('账号不存在', 404);
+        target.role = body.role;
+        await saveUser(env, target);
+        // if the target has an active session, its role would only update
+        // on their next login — sessions are short-lived snapshots by design
+        return json({ ok: true });
+      }
+
+      // GET /new — must be logged in
       if (request.method === 'GET' && pathname === '/new') {
-        return html(editPage(null, true));
+        if (!user) return redirect('/login');
+        return html(editPage(null, true, user));
       }
 
-      // GET /posts/:slug
-      let m = pathname.match(/^\/posts\/([^/]+)\/?$/);
+      // GET /posts/:slug — public, but comment visibility depends on login
+      m = pathname.match(/^\/posts\/([^/]+)\/?$/);
       if (request.method === 'GET' && m) {
         const post = await getPost(env, decodeURIComponent(m[1]));
-        if (!post) return html(notFoundPage(), 404);
-        return html(postPage(post));
+        if (!post) return html(notFoundPage(user), 404);
+        const comments = await getComments(env, post.slug);
+        return html(postPage(post, user, comments));
       }
 
-      // GET /edit/:slug
+      // GET /edit/:slug — must be the author or an admin
       m = pathname.match(/^\/edit\/([^/]+)\/?$/);
       if (request.method === 'GET' && m) {
         const post = await getPost(env, decodeURIComponent(m[1]));
-        if (!post) return html(notFoundPage(), 404);
-        return html(editPage(post, false));
+        if (!post) return html(notFoundPage(user), 404);
+        if (!canEditPost(user, post)) return redirect('/login');
+        return html(editPage(post, false, user));
       }
 
-      // POST /api/posts  (create)
-      if (request.method === 'POST' && pathname === '/api/posts') {
+      // POST /api/auth/request-code
+      if (request.method === 'POST' && pathname === '/api/auth/request-code') {
         const body = await request.json();
-        if (!checkPassword(env, body.password)) return text('密码错误', 403);
+        const email = normalizeEmail(body.email);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return text('邮箱格式不对', 400);
+        const code = await requestVerificationCode(env, email);
+        await sendVerificationEmail(env, email, code);
+        return json({ ok: true });
+      }
+
+      // POST /api/auth/verify-code
+      if (request.method === 'POST' && pathname === '/api/auth/verify-code') {
+        const body = await request.json();
+        const email = normalizeEmail(body.email);
+        const ok = await checkVerificationCode(env, email, body.code || '');
+        if (!ok) return text('验证码不对或已过期', 403);
+
+        let record = await getUser(env, email);
+        if (!record) {
+          record = {
+            email,
+            name: (body.name || '').trim() || email.split('@')[0],
+            role: isAdminEmail(env, email) ? 'admin' : 'user',
+            createdAt: new Date().toISOString(),
+          };
+          await saveUser(env, record);
+        } else if (body.name && body.name.trim() && body.name.trim() !== record.name) {
+          record.name = body.name.trim();
+          await saveUser(env, record);
+        }
+
+        const token = crypto.randomUUID();
+        const session = { email: record.email, role: record.role, name: record.name };
+        await env.POSTS.put(`session:${token}`, JSON.stringify(session), { expirationTtl: SESSION_TTL_SECONDS });
+
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieHeader(token) },
+        });
+      }
+
+      // POST /api/auth/logout
+      if (request.method === 'POST' && pathname === '/api/auth/logout') {
+        const token = parseCookies(request).session;
+        if (token) await env.POSTS.delete(`session:${token}`);
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Set-Cookie': clearSessionCookieHeader() },
+        });
+      }
+
+      // POST /api/posts  (create) — any logged-in user
+      if (request.method === 'POST' && pathname === '/api/posts') {
+        if (!user) return text('请先登录', 401);
+        const body = await request.json();
         if (!body.title) return text('缺少标题', 400);
         let slug = slugify(body.title);
-        // avoid collision
         let candidate = slug, n = 1;
         while (await getPost(env, candidate)) { candidate = `${slug}-${n++}`; }
         slug = candidate;
@@ -1362,21 +1781,23 @@ export default {
           tags: body.tags || [],
           pubDate: body.pubDate || new Date().toISOString().slice(0, 10),
           content: body.content || '',
+          authorEmail: user.email,
+          authorName: user.name || user.email,
         };
         await savePost(env, slug, data);
         return json({ slug });
       }
 
-      // POST /api/posts/:slug  (update)
+      // POST /api/posts/:slug  (update) — author or admin only
       m = pathname.match(/^\/api\/posts\/([^/]+)$/);
       if (request.method === 'POST' && m) {
         const slug = decodeURIComponent(m[1]);
-        const body = await request.json();
-        if (!checkPassword(env, body.password)) return text('密码错误', 403);
         const existing = await getPost(env, slug);
         if (!existing) return text('帖子不存在', 404);
+        if (!canEditPost(user, existing)) return text('没有权限', 403);
+        const body = await request.json();
         const data = {
-          slug,
+          ...existing,
           title: body.title || existing.title,
           description: body.description ?? existing.description,
           tags: body.tags ?? existing.tags,
@@ -1387,22 +1808,59 @@ export default {
         return json({ slug });
       }
 
-      // POST /api/posts/:slug/delete
+      // POST /api/posts/:slug/delete — author or admin only
       m = pathname.match(/^\/api\/posts\/([^/]+)\/delete$/);
       if (request.method === 'POST' && m) {
         const slug = decodeURIComponent(m[1]);
-        const body = await request.json();
-        if (!checkPassword(env, body.password)) return text('密码错误', 403);
+        const existing = await getPost(env, slug);
+        if (!existing) return text('帖子不存在', 404);
+        if (!canEditPost(user, existing)) return text('没有权限', 403);
         await deletePost(env, slug);
         return json({ ok: true });
       }
 
-      return html(notFoundPage(), 404);
+      // POST /api/posts/:slug/comments — any logged-in user
+      m = pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);
+      if (request.method === 'POST' && m) {
+        if (!user) return text('请先登录', 401);
+        const slug = decodeURIComponent(m[1]);
+        const post = await getPost(env, slug);
+        if (!post) return text('帖子不存在', 404);
+        const body = await request.json();
+        const content = (body.content || '').trim();
+        if (!content) return text('评论不能为空', 400);
+        const comment = {
+          id: crypto.randomUUID(),
+          authorEmail: user.email,
+          authorName: user.name || user.email,
+          content,
+          createdAt: new Date().toISOString(),
+        };
+        await addComment(env, slug, comment);
+        return json({ ok: true });
+      }
+
+      // POST /api/posts/:slug/comments/:id/delete — comment author or admin
+      m = pathname.match(/^\/api\/posts\/([^/]+)\/comments\/([^/]+)\/delete$/);
+      if (request.method === 'POST' && m) {
+        if (!user) return text('请先登录', 401);
+        const slug = decodeURIComponent(m[1]);
+        const commentId = decodeURIComponent(m[2]);
+        const ok = await deleteComment(env, slug, commentId, user);
+        if (!ok) return text('没有权限或评论不存在', 403);
+        return json({ ok: true });
+      }
+
+      return html(notFoundPage(user), 404);
     } catch (err) {
       return text('服务器出错：' + (err && err.message ? err.message : String(err)), 500);
     }
   },
 };
+
+function redirect(location) {
+  return new Response(null, { status: 302, headers: { Location: location } });
+}
 
 function html(body, status = 200) {
   return new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
