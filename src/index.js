@@ -1467,8 +1467,10 @@ async function getSessionUser(request, env) {
   };
 }
 
-function normalizeUsername(name) {
-  return (name || '').trim().toLowerCase();
+function cleanUsername(name) {
+  // Trim only — deliberately NOT lowercased, so registration/login/admin
+  // matching is case-sensitive ('Tom' and 'tom' are different accounts).
+  return (name || '').trim();
 }
 
 // ── password hashing (PBKDF2-SHA256, salted) ──────────────────────────────
@@ -1505,7 +1507,7 @@ async function getUsersIndex(env) {
 }
 async function addToUsersIndex(env, username) {
   const usernames = await getUsersIndex(env);
-  const norm = normalizeUsername(username);
+  const norm = cleanUsername(username);
   if (!usernames.includes(norm)) {
     usernames.push(norm);
     await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(usernames));
@@ -1513,10 +1515,10 @@ async function addToUsersIndex(env, username) {
 }
 
 async function getUser(env, username) {
-  return env.POSTS.get(`user:${normalizeUsername(username)}`, 'json');
+  return env.POSTS.get(`user:${cleanUsername(username)}`, 'json');
 }
 async function saveUser(env, user) {
-  await env.POSTS.put(`user:${normalizeUsername(user.username)}`, JSON.stringify(user));
+  await env.POSTS.put(`user:${cleanUsername(user.username)}`, JSON.stringify(user));
   await addToUsersIndex(env, user.username);
 }
 async function listUsers(env) {
@@ -1530,8 +1532,8 @@ function searchUsers(users, query) {
   return users.filter((u) => (u.username || '').toLowerCase().includes(q));
 }
 function isAdminUsername(env, username) {
-  const list = (env.ADMIN_USERNAMES || '').split(',').map((s) => normalizeUsername(s)).filter(Boolean);
-  return list.includes(normalizeUsername(username));
+  const list = (env.ADMIN_USERNAMES || '').split(',').map((s) => cleanUsername(s)).filter(Boolean);
+  return list.includes(cleanUsername(username));
 }
 
 // ── comments ────────────────────────────────────────────────────────────
@@ -1703,13 +1705,13 @@ export default {
       if (request.method === 'GET' && pathname === '/api/debug/admin-check') {
         const testUsername = url.searchParams.get('username') || '';
         const raw = env.ADMIN_USERNAMES || '';
-        const parsed = raw.split(',').map((s) => normalizeUsername(s)).filter(Boolean);
+        const parsed = raw.split(',').map((s) => cleanUsername(s)).filter(Boolean);
         return json({
           adminUsernamesConfigured: !!raw,
           rawLength: raw.length,
           parsedCount: parsed.length,
           testUsername,
-          normalizedTestUsername: normalizeUsername(testUsername),
+          normalizedTestUsername: cleanUsername(testUsername),
           wouldBeAdmin: testUsername ? isAdminUsername(env, testUsername) : null,
         });
       }
