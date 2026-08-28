@@ -365,6 +365,27 @@ a { color: var(--ink); }
 
 /* ── post detail ──────────────────────────────────────────────────── */
 .post-detail { padding: 50px 0 80px; }
+.home-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 20px;
+  background: var(--paper);
+  border: var(--border) solid var(--ink);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+.home-link:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--hover-shadow-color, var(--ink));
+  background: var(--yellow);
+  color: var(--hover-text-color, var(--ink));
+}
+.home-link:active { transform: translate(2px, 2px); box-shadow: none; }
 .post-detail-meta {
   display: flex;
   align-items: center;
@@ -443,7 +464,18 @@ a { color: var(--ink); }
 /* a heading directly followed by another heading needs even less gap */
 .prose h1 + h2, .prose h1 + h3, .prose h2 + h3 { margin-top: 0.25em; }
 .prose p { margin: 0.85em 0; }
-.prose a { color: var(--ink); text-decoration-color: var(--blue); text-decoration-thickness: 2px; }
+.prose a {
+  color: var(--blue);
+  font-weight: 700;
+  background: rgba(69, 183, 209, 0.12);
+  padding: 0.05em 0.3em;
+  border-bottom: 2px solid var(--blue);
+  text-decoration: none;
+}
+.prose a:hover {
+  color: var(--paper);
+  background: var(--blue);
+}
 .prose strong { background: var(--yellow); padding: 0 3px; }
 .prose blockquote {
   border-left: var(--border) solid var(--ink);
@@ -469,6 +501,12 @@ a { color: var(--ink); }
 }
 .prose pre code { background: none; border: none; padding: 0; color: var(--paper); }
 .prose ul, .prose ol { padding-left: 1.4em; }
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border: var(--border) solid var(--ink);
+  margin: 1.2em 0;
+}
 .prose li { margin: 0.4em 0; }
 .prose hr { border: none; border-top: var(--border) solid var(--ink); margin: 2.5em 0; }
 
@@ -778,8 +816,11 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
 }
 .tb-btn:active { transform: translate(1px, 1px); box-shadow: none; }
 
-/* prominent instant tooltip — no native-title delay, high contrast */
-.tb-btn[data-tooltip]::after {
+/* prominent instant tooltip — no native-title delay, high contrast.
+   Works on any element with a data-tooltip attribute (not just .tb-btn),
+   as long as it has position: relative. */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 9px);
@@ -798,7 +839,7 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   transition: opacity 0.08s ease, transform 0.08s ease;
   z-index: 30;
 }
-.tb-btn[data-tooltip]::before {
+[data-tooltip]::before {
   content: '';
   position: absolute;
   bottom: calc(100% + 4px);
@@ -811,13 +852,13 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   transition: opacity 0.08s ease;
   z-index: 30;
 }
-.tb-btn[data-tooltip]:hover::after,
-.tb-btn[data-tooltip]:focus-visible::after {
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-.tb-btn[data-tooltip]:hover::before,
-.tb-btn[data-tooltip]:focus-visible::before {
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::before {
   opacity: 1;
 }
 .tb-sep {
