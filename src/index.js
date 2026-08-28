@@ -4,7 +4,7 @@
 // Writes (create / edit / delete) require the ADMIN_PASSWORD secret.
 
 const SITE_NAME = '野蛮生长';
-const SITE_TAGLINE = 'NEO-BRUTALIST NOTES · 未经修饰的想法';
+const SITE_TAGLINE = 'NEO-BRUTALIST NOTES · Chegada · CSP-S';
 
 // ── tiny markdown → html (enough for a personal blog) ──────────────────────
 function escapeHtml(str) {
@@ -313,7 +313,7 @@ function layout({ title, body, active = '' }) {
 ${body}
 </main>
 <footer class="site-footer">
-  <span>${SITE_NAME} · ${SITE_TAGLINE}</span>
+  <span>${SITE_TAGLINE}</span>
 </footer>
 <script>
   (function () {
@@ -476,7 +476,7 @@ function homePage(posts, meta) {
   <section class="hero">
     <div class="hero-tag">PERSONAL BLOG / NO FILTER</div>
     <h1 class="hero-title">野蛮生长<span class="hero-dot">.</span></h1>
-    <p class="hero-sub">没有编辑部，只有想法和发布键。粗野一点，真实一点。</p>
+    <p class="hero-sub">Metamorphosis. Chegada's blog</p>
     <button type="button" class="btn btn-chaos" onclick="toggleChaos()">🎲 混乱模式</button>
   </section>
 
