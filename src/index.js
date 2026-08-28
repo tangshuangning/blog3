@@ -269,7 +269,7 @@ function searchPosts(posts, query) {
 // ── layout ───────────────────────────────────────────────────────────────
 function layout({ title, body, active = '', user = null }) {
   const navAuth = user
-    ? `<span class="nav-user" data-tooltip="${user.role === 'admin' ? '管理员' : '普通用户'}">${escapeHtml(user.name || user.email)}</span>
+    ? `<span class="nav-user" data-tooltip="${user.role === 'admin' ? '管理员' : '普通用户'}">${escapeHtml(user.username)}</span>
        <a href="#" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/');return false;" class="${active === 'login' ? 'is-active' : ''}">退出</a>`
     : `<a href="/login" class="${active === 'login' ? 'is-active' : ''}">登录</a>`;
   return `<!doctype html>
@@ -469,7 +469,7 @@ function homePage(posts, meta, user) {
     ? posts.map((p, i) => `
       <a href="/posts/${encodeURIComponent(p.slug)}" target="_blank" rel="noopener" class="post-card tilt-${i % 3}">
         <span class="stamp">已发布</span>
-        <div class="post-card-date">${fmtDate(p.pubDate)} · ${escapeHtml(p.authorName || '匿名')}</div>
+        <div class="post-card-date">${fmtDate(p.pubDate)} · ${escapeHtml(p.authorUsername || '匿名')}</div>
         <h2 class="post-card-title">${escapeHtml(p.title)}</h2>
         <p class="post-card-desc">${escapeHtml(p.description || '')}</p>
         ${tagChips(p.tags)}
@@ -552,7 +552,7 @@ function homePage(posts, meta, user) {
 function commentItem(c) {
   return `<div class="comment-item" id="comment-${c.id}">
     <div class="comment-meta">
-      <strong>${escapeHtml(c.authorName || c.authorEmail)}</strong>
+      <strong>${escapeHtml(c.authorUsername)}</strong>
       <time>${fmtDate(c.createdAt)}</time>
     </div>
     <p class="comment-body">${escapeHtml(c.content)}</p>
@@ -590,7 +590,7 @@ function postPage(post, user, comments) {
     </a>
     <div class="post-detail-meta">
       <time>${fmtDate(post.pubDate)}</time>
-      <span class="post-author">作者：${escapeHtml(post.authorName || '匿名')}</span>
+      <span class="post-author">作者：${escapeHtml(post.authorUsername || '匿名')}</span>
       ${tagChips(post.tags)}
     </div>
     <div class="post-title-row">
@@ -1301,78 +1301,63 @@ function notFoundPage(user) {
 function loginPage() {
   const body = `
   <section class="login-section">
-    <div class="hero-tag">SIGN IN / SIGN UP</div>
-    <h1 class="login-title">登录 / 注册</h1>
-    <p class="login-sub">用邮箱收验证码，没有账号会自动帮你注册一个。</p>
+    <div class="hero-tag" id="login-mode-tag">SIGN IN</div>
+    <h1 class="login-title" id="login-mode-title">登录</h1>
+    <p class="login-sub" id="login-mode-sub">用用户名和密码登录。</p>
 
-    <form id="email-step" class="login-form">
-      <label>邮箱
-        <input id="login-email" type="email" required placeholder="you@example.com" autocomplete="email" />
+    <form id="auth-form" class="login-form">
+      <label>用户名
+        <input id="auth-username" type="text" required placeholder="给自己起个用户名" autocomplete="username" />
       </label>
-      <button type="submit" class="btn btn-save">发送验证码</button>
-      <p id="email-error" class="form-error" hidden></p>
+      <label>密码
+        <input id="auth-password" type="password" required minlength="6" placeholder="至少 6 位" autocomplete="current-password" />
+      </label>
+      <button type="submit" class="btn btn-save" id="auth-submit-btn">登录</button>
+      <p id="auth-error" class="form-error" hidden></p>
     </form>
 
-    <form id="code-step" class="login-form" hidden>
-      <label>验证码
-        <input id="login-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required placeholder="6 位数字" autocomplete="one-time-code" />
-      </label>
-      <label>昵称（可选，评论/文章会显示这个名字）
-        <input id="login-name" type="text" placeholder="给自己起个名字" />
-      </label>
-      <button type="submit" class="btn btn-save">验证并登录</button>
-      <button type="button" class="btn btn-ghost" onclick="backToEmailStep()">换个邮箱</button>
-      <p id="code-error" class="form-error" hidden></p>
-      <p class="login-hint">验证码 10 分钟内有效，没收到可以返回重新发送。</p>
-    </form>
+    <p class="login-hint">
+      <span id="toggle-to-register">还没有账号？<a href="#" onclick="setMode('register');return false;">注册一个</a></span>
+      <span id="toggle-to-login" hidden>已经有账号？<a href="#" onclick="setMode('login');return false;">直接登录</a></span>
+    </p>
   </section>
 
   <script>
-    var pendingEmail = '';
-    var emailStep = document.getElementById('email-step');
-    var codeStep = document.getElementById('code-step');
+    var mode = 'login';
+    var form = document.getElementById('auth-form');
+    var err = document.getElementById('auth-error');
 
-    function backToEmailStep() {
-      codeStep.hidden = true;
-      emailStep.hidden = false;
+    function setMode(next) {
+      mode = next;
+      err.hidden = true;
+      var isRegister = mode === 'register';
+      document.getElementById('login-mode-tag').textContent = isRegister ? 'SIGN UP' : 'SIGN IN';
+      document.getElementById('login-mode-title').textContent = isRegister ? '注册' : '登录';
+      document.getElementById('login-mode-sub').textContent = isRegister
+        ? '起一个还没被占用的用户名，设置密码。'
+        : '用用户名和密码登录。';
+      document.getElementById('auth-submit-btn').textContent = isRegister ? '注册' : '登录';
+      document.getElementById('toggle-to-register').hidden = isRegister;
+      document.getElementById('toggle-to-login').hidden = !isRegister;
+      document.getElementById('auth-password').autocomplete = isRegister ? 'new-password' : 'current-password';
     }
+    window.setMode = setMode;
 
-    emailStep.addEventListener('submit', async function (e) {
+    form.addEventListener('submit', async function (e) {
       e.preventDefault();
-      var email = document.getElementById('login-email').value.trim();
-      var err = document.getElementById('email-error');
       err.hidden = true;
-      var res = await fetch('/api/auth/request-code', {
+      var username = document.getElementById('auth-username').value.trim();
+      var password = document.getElementById('auth-password').value;
+      var url = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      var res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email }),
-      });
-      if (res.ok) {
-        pendingEmail = email;
-        emailStep.hidden = true;
-        codeStep.hidden = false;
-        document.getElementById('login-code').focus();
-      } else {
-        err.textContent = (await res.text()) || '发送失败，请检查邮箱地址';
-        err.hidden = false;
-      }
-    });
-
-    codeStep.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      var code = document.getElementById('login-code').value.trim();
-      var name = document.getElementById('login-name').value.trim();
-      var err = document.getElementById('code-error');
-      err.hidden = true;
-      var res = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: pendingEmail, code: code, name: name }),
+        body: JSON.stringify({ username: username, password: password }),
       });
       if (res.ok) {
         window.location.href = '/';
       } else {
-        err.textContent = (await res.text()) || '验证码不对，再试一次';
+        err.textContent = (await res.text()) || (mode === 'register' ? '注册失败' : '登录失败');
         err.hidden = false;
       }
     });
@@ -1385,13 +1370,12 @@ function adminUsersPage(users, query, currentUser) {
     ? users.map((u) => `
       <div class="admin-user-row">
         <div class="admin-user-info">
-          <strong>${escapeHtml(u.name || u.email)}</strong>
-          <span class="admin-user-email">${escapeHtml(u.email)}</span>
+          <strong>${escapeHtml(u.username)}</strong>
         </div>
         <span class="admin-role-badge admin-role-${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
-        ${u.email === currentUser.email
+        ${u.username === currentUser.username
           ? `<span class="admin-self-note">（你自己）</span>`
-          : `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.email}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`
+          : `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`
         }
       </div>`).join('')
     : `<p class="comment-empty">没有匹配的账号。</p>`;
@@ -1401,7 +1385,7 @@ function adminUsersPage(users, query, currentUser) {
     <div class="hero-tag">ADMIN / ACCOUNTS</div>
     <h1 class="login-title">账号管理</h1>
     <form class="search-bar" action="/admin/users" method="get">
-      <input type="text" name="q" value="${escapeHtml(query)}" placeholder="按昵称或邮箱搜索……" class="search-input" />
+      <input type="text" name="q" value="${escapeHtml(query)}" placeholder="按用户名搜索……" class="search-input" />
       <button type="submit" class="btn btn-search">🔍 搜索</button>
       ${query ? '<a href="/admin/users" class="btn btn-ghost">清空</a>' : ''}
     </form>
@@ -1409,8 +1393,8 @@ function adminUsersPage(users, query, currentUser) {
   </section>
 
   <script>
-    async function toggleRole(email, newRole) {
-      const res = await fetch('/api/admin/users/' + encodeURIComponent(email) + '/role', {
+    async function toggleRole(username, newRole) {
+      const res = await fetch('/api/admin/users/' + encodeURIComponent(username) + '/role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
@@ -1432,7 +1416,7 @@ function adminUsersPage(users, query, currentUser) {
 // To avoid that lag, we maintain our own index — a single KV key holding a
 // JSON array of slugs — and always read/write it with get()/put(), never
 // list().
-// ── auth: cookies, sessions, users, email verification codes ─────────────
+// ── auth: cookies, sessions, users (username + password, no email) ───────
 function parseCookies(request) {
   const header = request.headers.get('Cookie') || '';
   const cookies = {};
@@ -1461,16 +1445,41 @@ async function getSessionUser(request, env) {
   const session = await env.POSTS.get(`session:${token}`, 'json');
   if (!session) return null;
   // Always re-read the live user record rather than trusting whatever
-  // role/name was cached in the session at login time — otherwise an
-  // admin promotion wouldn't take effect until the target logs out and
-  // back in again.
-  const freshUser = await getUser(env, session.email);
+  // role was cached in the session at login time — otherwise an admin
+  // promotion wouldn't take effect until the target logs out and back in.
+  const freshUser = await getUser(env, session.username);
   if (!freshUser) return null;
-  return { email: freshUser.email, role: freshUser.role, name: freshUser.name };
+  return { username: freshUser.username, role: freshUser.role };
 }
 
-function normalizeEmail(email) {
-  return (email || '').trim().toLowerCase();
+function normalizeUsername(name) {
+  return (name || '').trim().toLowerCase();
+}
+
+// ── password hashing (PBKDF2-SHA256, salted) ──────────────────────────────
+function bytesToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+function randomSaltHex() {
+  return bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
+}
+async function hashPassword(password, saltHex) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: hexToBytes(saltHex), iterations: 50000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return bytesToHex(new Uint8Array(bits));
+}
+async function verifyPassword(password, saltHex, hashHex) {
+  const computed = await hashPassword(password, saltHex);
+  return computed === hashHex;
 }
 
 const USERS_INDEX_KEY = 'users-index';
@@ -1479,80 +1488,35 @@ async function getUsersIndex(env) {
   const raw = await env.POSTS.get(USERS_INDEX_KEY, 'json');
   return Array.isArray(raw) ? raw : [];
 }
-async function addToUsersIndex(env, email) {
-  const emails = await getUsersIndex(env);
-  const norm = normalizeEmail(email);
-  if (!emails.includes(norm)) {
-    emails.push(norm);
-    await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(emails));
+async function addToUsersIndex(env, username) {
+  const usernames = await getUsersIndex(env);
+  const norm = normalizeUsername(username);
+  if (!usernames.includes(norm)) {
+    usernames.push(norm);
+    await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(usernames));
   }
 }
 
-async function getUser(env, email) {
-  return env.POSTS.get(`user:${normalizeEmail(email)}`, 'json');
+async function getUser(env, username) {
+  return env.POSTS.get(`user:${normalizeUsername(username)}`, 'json');
 }
 async function saveUser(env, user) {
-  await env.POSTS.put(`user:${normalizeEmail(user.email)}`, JSON.stringify(user));
-  await addToUsersIndex(env, user.email);
+  await env.POSTS.put(`user:${normalizeUsername(user.username)}`, JSON.stringify(user));
+  await addToUsersIndex(env, user.username);
 }
 async function listUsers(env) {
-  const emails = await getUsersIndex(env);
-  const users = await Promise.all(emails.map((e) => getUser(env, e)));
+  const usernames = await getUsersIndex(env);
+  const users = await Promise.all(usernames.map((u) => getUser(env, u)));
   return users.filter(Boolean).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 }
 function searchUsers(users, query) {
   const q = query.trim().toLowerCase();
   if (!q) return users;
-  return users.filter((u) =>
-    (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
-  );
+  return users.filter((u) => (u.username || '').toLowerCase().includes(q));
 }
-function isAdminEmail(env, email) {
-  const list = (env.ADMIN_EMAILS || '').split(',').map((s) => normalizeEmail(s)).filter(Boolean);
-  return list.includes(normalizeEmail(email));
-}
-
-function generateCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-async function requestVerificationCode(env, email) {
-  const code = generateCode();
-  await env.POSTS.put(`verify:${normalizeEmail(email)}`, JSON.stringify({ code }), { expirationTtl: 600 });
-  return code;
-}
-async function checkVerificationCode(env, email, code) {
-  const key = `verify:${normalizeEmail(email)}`;
-  const record = await env.POSTS.get(key, 'json');
-  if (!record || record.code !== String(code).trim()) return false;
-  await env.POSTS.delete(key);
-  return true;
-}
-
-async function sendVerificationEmail(env, email, code) {
-  if (!env.RESEND_API_KEY) {
-    // No email service configured yet — log to the server console so this
-    // is still testable locally (`wrangler dev`), but never leak the code
-    // to the client/browser.
-    console.log(`[dev] verification code for ${email}: ${code}`);
-    return;
-  }
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: env.RESEND_FROM || 'onboarding@resend.dev',
-      to: [email],
-      subject: `验证码：${code}`,
-      html: `<p>你的验证码是 <strong style="font-size:22px">${code}</strong>，10 分钟内有效。</p>`,
-    }),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error('邮件发送失败：' + errText);
-  }
+function isAdminUsername(env, username) {
+  const list = (env.ADMIN_USERNAMES || '').split(',').map((s) => normalizeUsername(s)).filter(Boolean);
+  return list.includes(normalizeUsername(username));
 }
 
 // ── comments ────────────────────────────────────────────────────────────
@@ -1570,7 +1534,7 @@ async function deleteComment(env, slug, commentId, requester) {
   const idx = list.findIndex((c) => c.id === commentId);
   if (idx === -1) return false;
   const comment = list[idx];
-  if (comment.authorEmail !== requester.email && requester.role !== 'admin') return false;
+  if (comment.authorUsername !== requester.username && requester.role !== 'admin') return false;
   list.splice(idx, 1);
   await env.POSTS.put(`comments:${slug}`, JSON.stringify(list));
   return true;
@@ -1625,7 +1589,7 @@ async function deletePost(env, slug) {
 
 function canEditPost(user, post) {
   if (!user) return false;
-  return user.role === 'admin' || user.email === post.authorEmail;
+  return user.role === 'admin' || user.username === post.authorUsername;
 }
 
 // ── router ───────────────────────────────────────────────────────────────
@@ -1673,20 +1637,18 @@ export default {
         return html(adminUsersPage(filtered, q, user));
       }
 
-      // POST /api/admin/users/:email/role — admin only
+      // POST /api/admin/users/:username/role — admin only
       let m = pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
       if (request.method === 'POST' && m) {
         if (!user) return text('请先登录', 401);
         if (user.role !== 'admin') return text('没有权限', 403);
-        const targetEmail = decodeURIComponent(m[1]);
+        const targetUsername = decodeURIComponent(m[1]);
         const body = await request.json();
         if (body.role !== 'admin' && body.role !== 'user') return text('角色参数不对', 400);
-        const target = await getUser(env, targetEmail);
+        const target = await getUser(env, targetUsername);
         if (!target) return text('账号不存在', 404);
         target.role = body.role;
         await saveUser(env, target);
-        // if the target has an active session, its role would only update
-        // on their next login — sessions are short-lived snapshots by design
         return json({ ok: true });
       }
 
@@ -1714,41 +1676,49 @@ export default {
         return html(editPage(post, false, user));
       }
 
-      // POST /api/auth/request-code
-      if (request.method === 'POST' && pathname === '/api/auth/request-code') {
+      // POST /api/auth/register — username must not already exist
+      if (request.method === 'POST' && pathname === '/api/auth/register') {
         const body = await request.json();
-        const email = normalizeEmail(body.email);
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return text('邮箱格式不对', 400);
-        const code = await requestVerificationCode(env, email);
-        await sendVerificationEmail(env, email, code);
-        return json({ ok: true });
-      }
-
-      // POST /api/auth/verify-code
-      if (request.method === 'POST' && pathname === '/api/auth/verify-code') {
-        const body = await request.json();
-        const email = normalizeEmail(body.email);
-        const ok = await checkVerificationCode(env, email, body.code || '');
-        if (!ok) return text('验证码不对或已过期', 403);
-
-        let record = await getUser(env, email);
-        if (!record) {
-          record = {
-            email,
-            name: (body.name || '').trim() || email.split('@')[0],
-            role: isAdminEmail(env, email) ? 'admin' : 'user',
-            createdAt: new Date().toISOString(),
-          };
-          await saveUser(env, record);
-        } else if (body.name && body.name.trim() && body.name.trim() !== record.name) {
-          record.name = body.name.trim();
-          await saveUser(env, record);
+        const username = (body.username || '').trim();
+        const password = body.password || '';
+        if (!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)) {
+          return text('用户名 2-20 位，只能是中英文/数字/下划线', 400);
         }
+        if (password.length < 6) return text('密码至少 6 位', 400);
+        const existing = await getUser(env, username);
+        if (existing) return text('用户名已被占用', 409);
+
+        const salt = randomSaltHex();
+        const passwordHash = await hashPassword(password, salt);
+        const record = {
+          username,
+          passwordHash,
+          salt,
+          role: isAdminUsername(env, username) ? 'admin' : 'user',
+          createdAt: new Date().toISOString(),
+        };
+        await saveUser(env, record);
 
         const token = crypto.randomUUID();
-        const session = { email: record.email, role: record.role, name: record.name };
-        await env.POSTS.put(`session:${token}`, JSON.stringify(session), { expirationTtl: SESSION_TTL_SECONDS });
+        await env.POSTS.put(`session:${token}`, JSON.stringify({ username: record.username }), { expirationTtl: SESSION_TTL_SECONDS });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieHeader(token) },
+        });
+      }
 
+      // POST /api/auth/login
+      if (request.method === 'POST' && pathname === '/api/auth/login') {
+        const body = await request.json();
+        const username = (body.username || '').trim();
+        const password = body.password || '';
+        const record = await getUser(env, username);
+        if (!record) return text('用户名或密码不对', 403);
+        const ok = await verifyPassword(password, record.salt, record.passwordHash);
+        if (!ok) return text('用户名或密码不对', 403);
+
+        const token = crypto.randomUUID();
+        await env.POSTS.put(`session:${token}`, JSON.stringify({ username: record.username }), { expirationTtl: SESSION_TTL_SECONDS });
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieHeader(token) },
@@ -1781,8 +1751,7 @@ export default {
           tags: body.tags || [],
           pubDate: body.pubDate || new Date().toISOString().slice(0, 10),
           content: body.content || '',
-          authorEmail: user.email,
-          authorName: user.name || user.email,
+          authorUsername: user.username,
         };
         await savePost(env, slug, data);
         return json({ slug });
@@ -1831,8 +1800,7 @@ export default {
         if (!content) return text('评论不能为空', 400);
         const comment = {
           id: crypto.randomUUID(),
-          authorEmail: user.email,
-          authorName: user.name || user.email,
+          authorUsername: user.username,
           content,
           createdAt: new Date().toISOString(),
         };
