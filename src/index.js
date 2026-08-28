@@ -609,9 +609,16 @@ function editPage(post, isNew) {
           <input name="tags" value="${escapeHtml((p.tags || []).join(', '))}" placeholder="随笔, 深夜" />
         </label>
       </div>
-      <label>正文（支持 Markdown，含洛谷风格扩展）
-        <textarea name="content" rows="16" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
-      </label>
+      <div class="editor-split">
+        <div class="editor-pane">
+          <label for="content-input">正文（支持 Markdown，含洛谷风格扩展）</label>
+          <textarea id="content-input" name="content" rows="20" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
+        </div>
+        <div class="editor-pane">
+          <label>实时预览</label>
+          <div id="content-preview" class="prose editor-preview"></div>
+        </div>
+      </div>
       <label>管理密码
         <input name="password" type="password" required placeholder="输入密码才能保存" autocomplete="current-password" />
       </label>
@@ -622,6 +629,173 @@ function editPage(post, isNew) {
       <p id="editor-error" class="form-error" hidden></p>
     </form>
   </section>
+
+  <script>
+    // ── client-side markdown renderer (mirrors src/index.js mdToHtml) ──────
+    // Kept in sync by hand so the live preview matches what the server will
+    // actually render once published.
+    (function () {
+      function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      function inline(md) {
+        return md
+          .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
+          .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+          .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
+          .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      }
+      function splitTableRow(line) {
+        var t = line.trim();
+        if (t.indexOf('|') === 0) t = t.slice(1);
+        if (t.slice(-1) === '|') t = t.slice(0, -1);
+        return t.split('|').map(function (c) { return c.trim(); });
+      }
+      function tableAlign(sep) {
+        var s = sep.trim();
+        var left = s.indexOf(':') === 0;
+        var right = s.slice(-1) === ':';
+        if (left && right) return 'center';
+        if (right) return 'right';
+        if (left) return 'left';
+        return '';
+      }
+      function renderTable(headers, aligns, rows) {
+        var out = '<table><thead><tr>';
+        headers.forEach(function (h, i) {
+          var a = aligns[i] ? ' style="text-align:' + aligns[i] + '"' : '';
+          out += '<th' + a + '>' + inline(h) + '</th>';
+        });
+        out += '</tr></thead><tbody>';
+        rows.forEach(function (row) {
+          out += '<tr>';
+          row.forEach(function (cell, i) {
+            var a = aligns[i] ? ' style="text-align:' + aligns[i] + '"' : '';
+            out += '<td' + a + '>' + inline(cell || '') + '</td>';
+          });
+          out += '</tr>';
+        });
+        out += '</tbody></table>';
+        return out;
+      }
+      var TABLE_SEP_RE = /^\\s*\\|?(\\s*:?-{1,}:?\\s*\\|)*\\s*:?-{1,}:?\\s*\\|?\\s*$/;
+      var CALLOUT_OPEN_RE = /^::::(info|success|warning|error)(?:\\[(.*?)\\])?(\\{open\\})?\\s*$/;
+      var ALIGN_OPEN_RE = /^:::align\\{(\\w+)\\}\\s*$/;
+
+      function renderLines(lines) {
+        var html = '';
+        var inCode = false;
+        var listType = null;
+        function closeList() { if (listType) { html += '</' + listType + '>'; listType = null; } }
+
+        var i = 0;
+        while (i < lines.length) {
+          var raw = lines[i];
+          if (raw.indexOf('\`\`\`') === 0) {
+            if (!inCode) { closeList(); html += '<pre><code>'; inCode = true; }
+            else { html += '</code></pre>'; inCode = false; }
+            i++; continue;
+          }
+          if (inCode) { html += raw + '\\n'; i++; continue; }
+
+          var line = raw;
+          if (/^\\s*$/.test(line)) { closeList(); i++; continue; }
+
+          var m;
+          if ((m = line.match(CALLOUT_OPEN_RE))) {
+            closeList();
+            var type = m[1], title = m[2], openAttr = m[3] ? ' open' : '';
+            var j = i + 1;
+            while (j < lines.length && lines[j].trim() !== '::::') j++;
+            var inner = renderLines(lines.slice(i + 1, j));
+            var label = title ? inline(title) : type.toUpperCase();
+            html += '<details class="callout callout-' + type + '"' + openAttr + '><summary>' + label + '</summary><div class="callout-body">' + inner + '</div></details>';
+            i = j + 1; continue;
+          }
+          if ((m = line.match(ALIGN_OPEN_RE))) {
+            closeList();
+            var alignValue = m[1];
+            var j2 = i + 1;
+            while (j2 < lines.length && lines[j2].trim() !== ':::') j2++;
+            var inner2 = renderLines(lines.slice(i + 1, j2));
+            html += '<div class="md-align md-align-' + alignValue + '">' + inner2 + '</div>';
+            i = j2 + 1; continue;
+          }
+          if (line.indexOf('|') !== -1 && lines[i + 1] && TABLE_SEP_RE.test(lines[i + 1])) {
+            closeList();
+            var headers = splitTableRow(line);
+            var aligns = splitTableRow(lines[i + 1]).map(tableAlign);
+            var j3 = i + 2;
+            var rows = [];
+            while (j3 < lines.length && lines[j3].indexOf('|') !== -1 && !/^\\s*$/.test(lines[j3])) {
+              rows.push(splitTableRow(lines[j3]));
+              j3++;
+            }
+            html += renderTable(headers, aligns, rows);
+            i = j3; continue;
+          }
+          if ((m = line.match(/^(#{1,6})\\s+(.*)$/))) {
+            closeList();
+            var level = m[1].length;
+            html += '<h' + level + '>' + inline(m[2]) + '</h' + level + '>';
+            i++; continue;
+          }
+          if ((m = line.match(/^&gt;\\s?(.*)$/))) {
+            closeList();
+            html += '<blockquote><p>' + inline(m[1]) + '</p></blockquote>';
+            i++; continue;
+          }
+          if ((m = line.match(/^[-*]\\s+(.*)$/))) {
+            if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
+            html += '<li>' + inline(m[1]) + '</li>';
+            i++; continue;
+          }
+          if ((m = line.match(/^\\d+\\.\\s+(.*)$/))) {
+            if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
+            html += '<li>' + inline(m[1]) + '</li>';
+            i++; continue;
+          }
+          if (/^(-{3,}|\\*{3,})$/.test(line.trim())) {
+            closeList();
+            html += '<hr>';
+            i++; continue;
+          }
+          closeList();
+          html += '<p>' + inline(line) + '</p>';
+          i++;
+        }
+        closeList();
+        if (inCode) html += '</code></pre>';
+        return html;
+      }
+
+      function mdToHtml(md) {
+        return renderLines(escapeHtml(md).split('\\n'));
+      }
+
+      var textarea = document.getElementById('content-input');
+      var preview = document.getElementById('content-preview');
+
+      function updatePreview() {
+        preview.innerHTML = mdToHtml(textarea.value || '');
+        if (window.renderMathInElement) {
+          renderMathInElement(preview, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '$', right: '$', display: false }
+            ],
+            throwOnError: false
+          });
+        }
+      }
+
+      textarea.addEventListener('input', updatePreview);
+      updatePreview();
+      // KaTeX loads via deferred <script> tags in <head>, so it may not be
+      // ready yet at this point — re-render once more after it finishes.
+      document.addEventListener('DOMContentLoaded', updatePreview);
+    })();
+  </script>
 
   <script>
     const form = document.getElementById('editor-form');
