@@ -23,60 +23,156 @@ function inline(md) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
 
-function mdToHtml(md) {
-  const lines = escapeHtml(md).split('\n');
+function splitTableRow(line) {
+  let t = line.trim();
+  if (t.startsWith('|')) t = t.slice(1);
+  if (t.endsWith('|')) t = t.slice(0, -1);
+  return t.split('|').map((c) => c.trim());
+}
+
+function tableAlign(sep) {
+  const s = sep.trim();
+  const left = s.startsWith(':');
+  const right = s.endsWith(':');
+  if (left && right) return 'center';
+  if (right) return 'right';
+  if (left) return 'left';
+  return '';
+}
+
+function renderTable(headers, aligns, rows) {
+  let out = '<table><thead><tr>';
+  headers.forEach((h, i) => {
+    const a = aligns[i] ? ` style="text-align:${aligns[i]}"` : '';
+    out += `<th${a}>${inline(h)}</th>`;
+  });
+  out += '</tr></thead><tbody>';
+  rows.forEach((row) => {
+    out += '<tr>';
+    row.forEach((cell, i) => {
+      const a = aligns[i] ? ` style="text-align:${aligns[i]}"` : '';
+      out += `<td${a}>${inline(cell || '')}</td>`;
+    });
+    out += '</tr>';
+  });
+  out += '</tbody></table>';
+  return out;
+}
+
+const TABLE_SEP_RE = /^\s*\|?(\s*:?-{1,}:?\s*\|)*\s*:?-{1,}:?\s*\|?\s*$/;
+const CALLOUT_OPEN_RE = /^::::(info|success|warning|error)(?:\[(.*?)\])?(\{open\})?\s*$/;
+const ALIGN_OPEN_RE = /^:::align\{(\w+)\}\s*$/;
+
+// ── markdown → html, with Luogu-flavored extensions ────────────────────────
+// Beyond standard markdown (headers, emphasis, lists, blockquote, code,
+// links, hr) this also supports:
+//   - tables with per-column alignment (|:---|:---:|---:|)
+//   - collapsible callout boxes: ::::info[title]{open} ... ::::
+//     (success / warning / error variants; {open} makes it expanded by default)
+//   - centered blocks: :::align{center} ... :::
+//   - $...$ / $$...$$ math, rendered client-side by KaTeX (see postPage)
+function renderLines(lines) {
   let html = '';
   let inCode = false;
   let listType = null; // 'ul' | 'ol'
+  const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
 
-  const closeList = () => {
-    if (listType) { html += `</${listType}>`; listType = null; }
-  };
+  let i = 0;
+  while (i < lines.length) {
+    const raw = lines[i];
 
-  for (let raw of lines) {
     if (raw.startsWith('```')) {
       if (!inCode) { closeList(); html += '<pre><code>'; inCode = true; }
       else { html += '</code></pre>'; inCode = false; }
-      continue;
+      i++; continue;
     }
-    if (inCode) { html += raw + '\n'; continue; }
+    if (inCode) { html += raw + '\n'; i++; continue; }
 
     const line = raw;
-    if (/^\s*$/.test(line)) { closeList(); continue; }
+    if (/^\s*$/.test(line)) { closeList(); i++; continue; }
 
     let m;
+
+    // collapsible callout box: ::::info[title]{open} ... ::::
+    if ((m = line.match(CALLOUT_OPEN_RE))) {
+      closeList();
+      const type = m[1];
+      const title = m[2];
+      const openAttr = m[3] ? ' open' : '';
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '::::') j++;
+      const inner = renderLines(lines.slice(i + 1, j));
+      const label = title ? inline(title) : type.toUpperCase();
+      html += `<details class="callout callout-${type}"${openAttr}><summary>${label}</summary><div class="callout-body">${inner}</div></details>`;
+      i = j + 1;
+      continue;
+    }
+
+    // centered/aligned block: :::align{center} ... :::
+    if ((m = line.match(ALIGN_OPEN_RE))) {
+      closeList();
+      const alignValue = m[1];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== ':::') j++;
+      const inner = renderLines(lines.slice(i + 1, j));
+      html += `<div class="md-align md-align-${alignValue}">${inner}</div>`;
+      i = j + 1;
+      continue;
+    }
+
+    // table: header row + separator row (|:---|:---:|---:|)
+    if (line.includes('|') && lines[i + 1] && TABLE_SEP_RE.test(lines[i + 1])) {
+      closeList();
+      const headers = splitTableRow(line);
+      const aligns = splitTableRow(lines[i + 1]).map(tableAlign);
+      let j = i + 2;
+      const rows = [];
+      while (j < lines.length && lines[j].includes('|') && !/^\s*$/.test(lines[j])) {
+        rows.push(splitTableRow(lines[j]));
+        j++;
+      }
+      html += renderTable(headers, aligns, rows);
+      i = j;
+      continue;
+    }
+
     if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
       closeList();
       const level = m[1].length;
       html += `<h${level}>${inline(m[2])}</h${level}>`;
-      continue;
+      i++; continue;
     }
     if ((m = line.match(/^&gt;\s?(.*)$/))) {
       closeList();
       html += `<blockquote><p>${inline(m[1])}</p></blockquote>`;
-      continue;
+      i++; continue;
     }
     if ((m = line.match(/^[-*]\s+(.*)$/))) {
       if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
       html += `<li>${inline(m[1])}</li>`;
-      continue;
+      i++; continue;
     }
     if ((m = line.match(/^\d+\.\s+(.*)$/))) {
       if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
       html += `<li>${inline(m[1])}</li>`;
-      continue;
+      i++; continue;
     }
     if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
       closeList();
       html += '<hr>';
-      continue;
+      i++; continue;
     }
     closeList();
     html += `<p>${inline(line)}</p>`;
+    i++;
   }
   closeList();
   if (inCode) html += '</code></pre>';
   return html;
+}
+
+function mdToHtml(md) {
+  return renderLines(escapeHtml(md).split('\n'));
 }
 
 function slugify(title) {
@@ -169,6 +265,22 @@ function layout({ title, body, active = '' }) {
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script defer>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.renderMathInElement) {
+      renderMathInElement(document.body, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '$', right: '$', display: false }
+        ],
+        throwOnError: false
+      });
+    }
+  });
+</script>
 </head>
 <body>
 <div id="cursor-dot" class="cursor-dot" aria-hidden="true"></div>
@@ -425,13 +537,14 @@ function postPage(post) {
       <time>${fmtDate(post.pubDate)}</time>
       ${tagChips(post.tags)}
     </div>
-    <h1 class="post-detail-title">${escapeHtml(post.title)}</h1>
-    <p class="post-detail-desc">${escapeHtml(post.description || '')}</p>
-
-    <div class="post-actions">
-      <a href="/edit/${encodeURIComponent(post.slug)}" class="btn btn-edit">✎ 编辑</a>
-      <button type="button" class="btn btn-delete" onclick="openDeletePanel()">🗑 删除</button>
+    <div class="post-title-row">
+      <h1 class="post-detail-title">${escapeHtml(post.title)}</h1>
+      <div class="post-actions">
+        <a href="/edit/${encodeURIComponent(post.slug)}" class="btn btn-sm btn-edit" title="编辑">✎ 编辑</a>
+        <button type="button" class="btn btn-sm btn-delete" title="删除" onclick="openDeletePanel()">🗑 删除</button>
+      </div>
     </div>
+    <p class="post-detail-desc">${escapeHtml(post.description || '')}</p>
 
     <div class="prose">${contentHtml}</div>
 
@@ -496,8 +609,8 @@ function editPage(post, isNew) {
           <input name="tags" value="${escapeHtml((p.tags || []).join(', '))}" placeholder="随笔, 深夜" />
         </label>
       </div>
-      <label>正文（支持 Markdown）
-        <textarea name="content" rows="16" placeholder="## 小标题&#10;&#10;正文内容，支持 **加粗**、*斜体*、\`代码\`、列表、> 引用……">${escapeHtml(p.content || '')}</textarea>
+      <label>正文（支持 Markdown，含洛谷风格扩展）
+        <textarea name="content" rows="16" placeholder="## 小标题&#10;&#10;支持 **加粗**、*斜体*、\`代码\`、列表、> 引用、表格&#10;&#10;数学公式：行内 \$a^2+b^2=c^2\$，独立成行 \$\$\\sum_{i=1}^n i\$\$&#10;&#10;信息框：&#10;::::info[标题]&#10;内容&#10;::::&#10;（success / warning / error 同理，加 {open} 默认展开）&#10;&#10;居中：&#10;:::align{center}&#10;内容&#10;:::">${escapeHtml(p.content || '')}</textarea>
       </label>
       <label>管理密码
         <input name="password" type="password" required placeholder="输入密码才能保存" autocomplete="current-password" />
