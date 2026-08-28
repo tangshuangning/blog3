@@ -98,7 +98,7 @@ a { color: var(--ink); }
   box-shadow: 4px 4px 0 var(--ink);
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
-.btn-nav-new:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.btn-nav-new:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--hover-shadow-color, var(--ink)); color: var(--hover-text-color, var(--ink)); }
 
 .site-main { flex: 1; max-width: 860px; margin: 0 auto; width: 100%; padding: 0 24px; }
 
@@ -228,7 +228,7 @@ a { color: var(--ink); }
   box-shadow: 3px 3px 0 var(--ink);
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
-.page-btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+.page-btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--hover-shadow-color, var(--ink)); color: var(--hover-text-color, var(--ink)); }
 .page-btn.is-current { background: var(--yellow); }
 .page-btn.is-disabled {
   opacity: 0.35;
@@ -291,7 +291,10 @@ a { color: var(--ink); }
 }
 .post-card:hover {
   transform: translate(-3px, -3px);
-  box-shadow: 9px 9px 0 var(--shadow-color);
+  box-shadow: 9px 9px 0 var(--hover-shadow-color, var(--shadow-color));
+}
+.post-card:hover .post-card-title {
+  color: var(--hover-text-color, var(--ink));
 }
 .tilt-0 { transform: rotate(-0.5deg); }
 .tilt-1 { transform: rotate(0.5deg); }
@@ -402,7 +405,7 @@ a { color: var(--ink); }
   box-shadow: 4px 4px 0 var(--ink);
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
-.btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--hover-shadow-color, var(--ink)); color: var(--hover-text-color, var(--ink)); }
 .btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--ink); }
 .btn-edit { background: var(--blue); }
 .btn-delete { background: var(--pink); }
