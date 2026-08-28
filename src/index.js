@@ -247,6 +247,25 @@ ${body}
 
     rafId = requestAnimationFrame(animate);
   })();
+
+  // Random hover colors for buttons and post cards — deliberately a
+  // different palette from chaos-mode's pink/green/blue/yellow so the two
+  // effects never overlap in color.
+  (function () {
+    var HOVER_PALETTE = ['#a855f7', '#ff8c42', '#a8ff60', '#22d3ee', '#e930ff', '#14b8a6'];
+    function pick() { return HOVER_PALETTE[Math.floor(Math.random() * HOVER_PALETTE.length)]; }
+
+    document.querySelectorAll('.btn, .btn-nav-new, .page-btn, .post-card').forEach(function (el) {
+      el.addEventListener('mouseenter', function () {
+        el.style.setProperty('--hover-shadow-color', pick());
+        el.style.setProperty('--hover-text-color', pick());
+      });
+      el.addEventListener('mouseleave', function () {
+        el.style.removeProperty('--hover-shadow-color');
+        el.style.removeProperty('--hover-text-color');
+      });
+    });
+  })();
 </script>
 </body>
 </html>`;
