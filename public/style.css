@@ -161,6 +161,105 @@ a { color: var(--ink); }
 .btn-chaos:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
 .btn-chaos:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--ink); }
 
+/* ── search ───────────────────────────────────────────────────────── */
+.search-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 12px 16px;
+  background: var(--paper);
+  border: var(--border) solid var(--ink);
+  color: var(--ink);
+}
+.search-input:focus {
+  outline: none;
+  box-shadow: 4px 4px 0 var(--blue);
+}
+.btn-search {
+  background: var(--blue);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  padding: 10px 18px;
+  border: var(--border) solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn-search:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.search-meta {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--gray);
+  margin: 0 0 24px;
+}
+
+/* ── pagination ───────────────────────────────────────────────────── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 60px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.pagination-numbers { display: flex; gap: 8px; flex-wrap: wrap; }
+.page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  padding: 8px 12px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.page-btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+.page-btn.is-current { background: var(--yellow); }
+.page-btn.is-disabled {
+  opacity: 0.35;
+  box-shadow: none;
+  cursor: default;
+}
+
+/* ── custom cursor ────────────────────────────────────────────────── */
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  background: var(--pink);
+  border: 2px solid var(--ink);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  transition: width 0.15s ease, height 0.15s ease, background 0.15s ease, border-radius 0.15s ease;
+  display: none;
+}
+.has-custom-cursor .cursor-dot { display: block; }
+.has-custom-cursor, .has-custom-cursor * { cursor: none !important; }
+.cursor-dot.is-active {
+  width: 34px;
+  height: 34px;
+  background: var(--yellow);
+  border-radius: 50%;
+}
+
 /* ── post grid / cards ────────────────────────────────────────────── */
 .post-grid {
   display: grid;
