@@ -237,22 +237,24 @@ a { color: var(--ink); }
 }
 
 /* ── custom cursor ────────────────────────────────────────────────── */
+/* A small circular dot that follows the mouse alongside the normal
+   system cursor (the system cursor is never hidden). */
 .cursor-dot {
   position: fixed;
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
-  background: var(--pink);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
   border: 2px solid var(--ink);
+  background: var(--pink);
   pointer-events: none;
   z-index: 9999;
   transform: translate(-50%, -50%);
-  transition: width 0.15s ease, height 0.15s ease, background 0.15s ease, border-radius 0.15s ease;
+  transition: transform 0.06s ease-out, width 0.15s ease, height 0.15s ease, background 0.15s ease;
   display: none;
 }
 .has-custom-cursor .cursor-dot { display: block; }
-.has-custom-cursor, .has-custom-cursor * { cursor: none !important; }
 .cursor-dot.is-active {
   width: 34px;
   height: 34px;

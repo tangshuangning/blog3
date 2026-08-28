@@ -196,17 +196,9 @@ ${body}
     if (!canFollow || !dot) return;
     document.body.classList.add('has-custom-cursor');
 
-    var x = window.innerWidth / 2, y = window.innerHeight / 2;
-    var tx = x, ty = y;
-    window.addEventListener('mousemove', function (e) { tx = e.clientX; ty = e.clientY; });
-
-    function loop() {
-      x += (tx - x) * 0.28;
-      y += (ty - y) * 0.28;
-      dot.style.transform = 'translate(' + x + 'px,' + y + 'px) translate(-50%,-50%)';
-      requestAnimationFrame(loop);
-    }
-    loop();
+    window.addEventListener('mousemove', function (e) {
+      dot.style.transform = 'translate(' + e.clientX + 'px,' + e.clientY + 'px) translate(-50%,-50%)';
+    });
 
     var interactiveSelector = 'a, button, input, textarea, .post-card';
     document.addEventListener('mouseover', function (e) {
@@ -442,9 +434,38 @@ function notFoundPage() {
 }
 
 // ── KV helpers ───────────────────────────────────────────────────────────
+// Cloudflare KV's list() operation is only *eventually* consistent, so a
+// freshly-created post can be briefly invisible in listPosts() if we relied
+// on list(). Individual get()/put() calls, however, are strongly consistent.
+// To avoid that lag, we maintain our own index — a single KV key holding a
+// JSON array of slugs — and always read/write it with get()/put(), never
+// list().
+const INDEX_KEY = 'index';
+
+async function getIndex(env) {
+  const raw = await env.POSTS.get(INDEX_KEY, 'json');
+  return Array.isArray(raw) ? raw : [];
+}
+
+async function addToIndex(env, slug) {
+  const slugs = await getIndex(env);
+  if (!slugs.includes(slug)) {
+    slugs.push(slug);
+    await env.POSTS.put(INDEX_KEY, JSON.stringify(slugs));
+  }
+}
+
+async function removeFromIndex(env, slug) {
+  const slugs = await getIndex(env);
+  const next = slugs.filter((s) => s !== slug);
+  if (next.length !== slugs.length) {
+    await env.POSTS.put(INDEX_KEY, JSON.stringify(next));
+  }
+}
+
 async function listPosts(env) {
-  const list = await env.POSTS.list({ prefix: 'post:' });
-  const posts = await Promise.all(list.keys.map((k) => env.POSTS.get(k.name, 'json')));
+  const slugs = await getIndex(env);
+  const posts = await Promise.all(slugs.map((slug) => getPost(env, slug)));
   return posts
     .filter(Boolean)
     .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
@@ -456,10 +477,12 @@ async function getPost(env, slug) {
 
 async function savePost(env, slug, data) {
   await env.POSTS.put(`post:${slug}`, JSON.stringify(data));
+  await addToIndex(env, slug);
 }
 
 async function deletePost(env, slug) {
   await env.POSTS.delete(`post:${slug}`);
+  await removeFromIndex(env, slug);
 }
 
 function checkPassword(env, password) {
