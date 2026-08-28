@@ -171,7 +171,8 @@ function layout({ title, body, active = '' }) {
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet" />
 </head>
 <body>
-<div class="cursor-dot" id="cursor-dot" aria-hidden="true"></div>
+<div id="cursor-dot" class="cursor-dot" aria-hidden="true"></div>
+<div id="cursor-ring" class="cursor-ring" aria-hidden="true"></div>
 <header class="site-header">
   <a href="/" class="brand">
     <span class="brand-mark">■</span>
@@ -190,23 +191,61 @@ ${body}
 </footer>
 <script>
   (function () {
-    var canFollow = window.matchMedia('(hover: hover) and (pointer: fine)').matches
-      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+    if (prefersReducedMotion || isTouchDevice) return;
+
     var dot = document.getElementById('cursor-dot');
-    if (!canFollow || !dot) return;
+    var ring = document.getElementById('cursor-ring');
+    if (!dot || !ring) return;
     document.body.classList.add('has-custom-cursor');
 
-    window.addEventListener('mousemove', function (e) {
-      dot.style.transform = 'translate(' + e.clientX + 'px,' + e.clientY + 'px) translate(-50%,-50%)';
-    });
+    var position = { x: 0, y: 0 };
+    var target = { x: 0, y: 0 };
+    var isHovering = false;
+    var rafId = null;
+    var isIdle = false;
+    var idleTimeout = null;
 
-    var interactiveSelector = 'a, button, input, textarea, .post-card';
-    document.addEventListener('mouseover', function (e) {
-      if (e.target.closest(interactiveSelector)) dot.classList.add('is-active');
-    });
-    document.addEventListener('mouseout', function (e) {
-      if (e.target.closest(interactiveSelector)) dot.classList.remove('is-active');
-    });
+    function stopAnimation() {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      isIdle = true;
+    }
+
+    function animate() {
+      if (isIdle) return;
+      var ease = 0.15;
+      position.x += (target.x - position.x) * ease;
+      position.y += (target.y - position.y) * ease;
+
+      var scale = isHovering ? 2.5 : 1;
+      var ringScale = isHovering ? 1.5 : 1;
+
+      dot.style.transform = 'translate3d(' + (position.x - 8) + 'px,' + (position.y - 8) + 'px,0) scale(' + scale + ')';
+      ring.style.transform = 'translate3d(' + (position.x - 16) + 'px,' + (position.y - 16) + 'px,0) scale(' + ringScale + ')';
+
+      rafId = requestAnimationFrame(animate);
+    }
+
+    function startAnimation() {
+      if (!isIdle) return;
+      isIdle = false;
+      rafId = requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('mousemove', function (e) {
+      target = { x: e.clientX, y: e.clientY };
+      if (isIdle) startAnimation();
+      if (idleTimeout) clearTimeout(idleTimeout);
+      idleTimeout = setTimeout(stopAnimation, 1000);
+    }, { passive: true });
+
+    window.addEventListener('mouseover', function (e) {
+      var t = e.target;
+      isHovering = t.tagName === 'A' || t.tagName === 'BUTTON' || !!t.closest('a, button');
+    }, { passive: true });
+
+    rafId = requestAnimationFrame(animate);
   })();
 </script>
 </body>
