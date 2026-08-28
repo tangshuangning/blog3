@@ -311,7 +311,7 @@ function layout({ title, body, active = '', user = null }) {
   <nav class="site-nav">
     <a href="/" class="${active === 'home' ? 'is-active' : ''}">首页</a>
     ${user ? `<a href="/new" class="btn-nav-new ${active === 'new' ? 'is-active' : ''}">+ 发新帖</a>` : ''}
-    ${user && user.role === 'admin' ? `<a href="/admin/users" class="${active === 'admin-users' ? 'is-active' : ''}">账号管理</a>` : ''}
+    ${user && user.isRootAdmin ? `<a href="/admin/users" class="${active === 'admin-users' ? 'is-active' : ''}">账号管理</a>` : ''}
     ${navAuth}
   </nav>
 </header>
@@ -1365,19 +1365,28 @@ function loginPage() {
   return layout({ title: '登录', body, active: 'login' });
 }
 
-function adminUsersPage(users, query, currentUser) {
+function adminUsersPage(users, query, currentUser, env) {
   const rows = users.length
-    ? users.map((u) => `
+    ? users.map((u) => {
+        const isRoot = isAdminUsername(env, u.username);
+        const isSelf = u.username === currentUser.username;
+        let action;
+        if (isRoot) {
+          action = `<span class="admin-self-note">（环境变量根管理员，面板无法修改）</span>`;
+        } else if (isSelf) {
+          action = `<span class="admin-self-note">（你自己）</span>`;
+        } else {
+          action = `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`;
+        }
+        return `
       <div class="admin-user-row">
         <div class="admin-user-info">
           <strong>${escapeHtml(u.username)}</strong>
         </div>
         <span class="admin-role-badge admin-role-${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
-        ${u.username === currentUser.username
-          ? `<span class="admin-self-note">（你自己）</span>`
-          : `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`
-        }
-      </div>`).join('')
+        ${action}
+      </div>`;
+      }).join('')
     : `<p class="comment-empty">没有匹配的账号。</p>`;
 
   const body = `
@@ -1449,7 +1458,13 @@ async function getSessionUser(request, env) {
   // promotion wouldn't take effect until the target logs out and back in.
   const freshUser = await getUser(env, session.username);
   if (!freshUser) return null;
-  return { username: freshUser.username, role: freshUser.role };
+  return {
+    username: freshUser.username,
+    role: freshUser.role,
+    // "root" admin = listed in the ADMIN_USERNAMES secret — only these
+    // accounts can manage other people's admin status.
+    isRootAdmin: isAdminUsername(env, freshUser.username),
+  };
 }
 
 function normalizeUsername(name) {
@@ -1627,22 +1642,28 @@ export default {
         return html(loginPage());
       }
 
-      // GET /admin/users — admin only
+      // GET /admin/users — only root admins (listed in ADMIN_USERNAMES),
+      // not just anyone whose role happens to say 'admin'
       if (request.method === 'GET' && pathname === '/admin/users') {
         if (!user) return redirect('/login');
-        if (user.role !== 'admin') return text('没有权限', 403);
+        if (!isAdminUsername(env, user.username)) return text('没有权限', 403);
         const q = url.searchParams.get('q') || '';
         const allUsers = await listUsers(env);
         const filtered = q.trim() ? searchUsers(allUsers, q) : allUsers;
-        return html(adminUsersPage(filtered, q, user));
+        return html(adminUsersPage(filtered, q, user, env));
       }
 
-      // POST /api/admin/users/:username/role — admin only
+      // POST /api/admin/users/:username/role — only root admins, and a
+      // root admin can never be promoted/demoted through this panel
+      // (protects against admins locking each other out)
       let m = pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
       if (request.method === 'POST' && m) {
         if (!user) return text('请先登录', 401);
-        if (user.role !== 'admin') return text('没有权限', 403);
+        if (!isAdminUsername(env, user.username)) return text('没有权限', 403);
         const targetUsername = decodeURIComponent(m[1]);
+        if (isAdminUsername(env, targetUsername)) {
+          return text('这个账号是环境变量里配置的根管理员，无法通过面板修改', 403);
+        }
         const body = await request.json();
         if (body.role !== 'admin' && body.role !== 'user') return text('角色参数不对', 400);
         const target = await getUser(env, targetUsername);
