@@ -948,6 +948,119 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   text-shadow: 6px 6px 0 var(--pink);
 }
 
+/* ── nav auth state ───────────────────────────────────────────────── */
+.nav-user {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gray);
+  border-bottom: 2px dashed var(--gray);
+}
+
+/* ── login page ───────────────────────────────────────────────────── */
+.login-section { padding: 60px 0 100px; max-width: 420px; }
+.login-title {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  text-transform: uppercase;
+  margin: 14px 0 8px;
+}
+.login-sub { color: var(--gray); margin: 0 0 32px; }
+.login-form { display: flex; flex-direction: column; gap: 18px; }
+.login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray);
+}
+.login-form input {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: var(--border) solid var(--ink);
+  color: var(--ink);
+}
+.login-form input:focus { outline: none; box-shadow: 4px 4px 0 var(--blue); }
+.login-hint { font-family: var(--font-mono); font-size: 0.75rem; color: var(--gray); }
+
+/* ── comments ─────────────────────────────────────────────────────── */
+.comments-section { margin-top: 60px; padding-top: 30px; border-top: var(--border) solid var(--ink); }
+.comments-title {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  margin: 0 0 20px;
+}
+.comment-item { padding: 14px 0; border-bottom: 2px solid var(--rule, var(--paper-alt)); }
+.comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+.comment-meta strong { text-transform: uppercase; }
+.comment-meta time { color: var(--gray); }
+.comment-body { margin: 0; line-height: 1.6; }
+.comment-empty { color: var(--gray); font-family: var(--font-mono); font-size: 0.85rem; }
+.comment-more-notice {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--gray);
+  background: var(--paper-alt);
+  border: 2px dashed var(--ink);
+  padding: 10px 14px;
+  margin: 16px 0;
+}
+.comment-login-prompt { font-family: var(--font-mono); font-size: 0.85rem; margin-top: 20px; }
+.comment-form { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+.comment-form textarea {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: var(--border) solid var(--ink);
+  color: var(--ink);
+  resize: vertical;
+}
+.comment-form textarea:focus { outline: none; box-shadow: 4px 4px 0 var(--blue); }
+.comment-form .btn { align-self: flex-start; }
+.post-author { text-transform: none; }
+
+/* ── admin users page ─────────────────────────────────────────────── */
+.admin-users-section { padding: 60px 0 100px; }
+.admin-users-section .search-bar { margin: 20px 0 30px; max-width: 520px; }
+.admin-user-list { display: flex; flex-direction: column; gap: 0; }
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+  border-bottom: 2px solid var(--rule, var(--paper-alt));
+}
+.admin-user-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 160px; }
+.admin-user-info strong { font-family: var(--font-display); text-transform: uppercase; font-size: 1rem; }
+.admin-user-email { font-family: var(--font-mono); font-size: 0.78rem; color: var(--gray); }
+.admin-role-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+}
+.admin-role-admin { background: var(--yellow); }
+.admin-role-user { background: var(--paper); }
+.admin-self-note { font-family: var(--font-mono); font-size: 0.78rem; color: var(--gray); }
+
 @media (max-width: 640px) {
   .editor-row { grid-template-columns: 1fr; }
   .editor-split { flex-direction: column; }
