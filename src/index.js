@@ -1717,6 +1717,14 @@ export default {
         const ok = await verifyPassword(password, record.salt, record.passwordHash);
         if (!ok) return text('用户名或密码不对', 403);
 
+        // Re-sync admin status on every login — if ADMIN_USERNAMES was set
+        // (or changed) after this account was first created, this promotes
+        // it without needing to delete and re-register.
+        if (isAdminUsername(env, record.username) && record.role !== 'admin') {
+          record.role = 'admin';
+          await saveUser(env, record);
+        }
+
         const token = crypto.randomUUID();
         await env.POSTS.put(`session:${token}`, JSON.stringify({ username: record.username }), { expirationTtl: SESSION_TTL_SECONDS });
         return new Response(JSON.stringify({ ok: true }), {
