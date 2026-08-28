@@ -432,14 +432,16 @@ a { color: var(--ink); }
 .prose { line-height: 1.75; font-size: 1.05rem; }
 .prose h1, .prose h2, .prose h3 {
   font-family: var(--font-display);
-  margin-top: 1.4em;
-  margin-bottom: 0.5em;
+  margin-top: 0.9em;
+  margin-bottom: 0.35em;
   text-transform: uppercase;
   line-height: 1.25;
 }
 .prose h1 { font-size: 1.6rem; }
 .prose h2 { font-size: 1.35rem; }
 .prose h3 { font-size: 1.05rem; }
+/* a heading directly followed by another heading needs even less gap */
+.prose h1 + h2, .prose h1 + h3, .prose h2 + h3 { margin-top: 0.25em; }
 .prose p { margin: 0.85em 0; }
 .prose a { color: var(--ink); text-decoration-color: var(--blue); text-decoration-thickness: 2px; }
 .prose strong { background: var(--yellow); padding: 0 3px; }
@@ -671,6 +673,89 @@ a { color: var(--ink); }
 .hl-invalid { color: var(--gray); text-decoration: underline wavy var(--pink); text-decoration-thickness: 1px; }
 .hl-math { color: #8b5cf6; background: rgba(139, 92, 246, 0.08); }
 .hl-code { color: var(--ink); background: var(--paper-alt); }
+
+/* ── formatting toolbar ───────────────────────────────────────────── */
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  border-bottom: none;
+  background: var(--paper-alt);
+}
+.tb-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.08s ease;
+}
+.tb-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--hover-shadow-color, var(--ink));
+  background: var(--yellow);
+}
+.tb-btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.tb-sep {
+  width: 2px;
+  align-self: stretch;
+  background: var(--rule, var(--ink));
+  opacity: 0.25;
+  margin: 2px 2px;
+}
+.editor-toolbar + .editor-source-wrap,
+.editor-toolbar + .editor-source-wrap .editor-highlight,
+.editor-toolbar + .editor-source-wrap textarea {
+  border-top: none;
+}
+
+/* ── code-block insertion modal (reuses .delete-panel overlay pattern) ── */
+.code-modal-inner {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.code-lang-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+}
+.code-modal-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  resize: vertical;
+}
+
+/* ── task list checkboxes ─────────────────────────────────────────── */
+.prose li.task-item { list-style: none; margin-left: -1.4em; }
+.prose li.task-item input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--green);
+  transform: translateY(1px);
+}
+.prose del { opacity: 0.65; }
 
 .editor-preview {
   min-height: 460px;
