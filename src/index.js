@@ -475,8 +475,8 @@ function homePage(posts, meta) {
   const body = `
   <section class="hero">
     <div class="hero-tag">PERSONAL BLOG / NO FILTER</div>
-    <h1 class="hero-title">野蛮生长<span class="hero-dot">.</span></h1>
-    <p class="hero-sub">Metamorphosis. Chegada's blog</p>
+    <h1 class="hero-title">Metamorphosis<span class="hero-dot">.</span></h1>
+    <p class="hero-sub">Chegada's blog</p>
     <button type="button" class="btn btn-chaos" onclick="toggleChaos()">🎲 混乱模式</button>
   </section>
 
