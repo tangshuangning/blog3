@@ -493,13 +493,14 @@ a { color: var(--ink); }
   font-size: 0.88em;
 }
 .prose pre {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--paper-alt);
+  color: var(--ink);
   border: var(--border) solid var(--ink);
   padding: 1.1em 1.25em;
   overflow-x: auto;
 }
-.prose pre code { background: none; border: none; padding: 0; color: var(--paper); }
+.prose pre code { background: none; border: none; padding: 0; color: var(--ink); }
+.math-block { margin: 1.2em 0; overflow-x: auto; }
 .prose ul, .prose ol { padding-left: 1.4em; }
 .prose img {
   max-width: 100%;
@@ -776,7 +777,11 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
   pointer-events: none;
   z-index: 0;
 }
-.hl-marker { color: var(--blue); font-weight: 700; }
+/* IMPORTANT: no font-weight/size/family changes here — the highlight
+   overlay must render every character at EXACTLY the same width as the
+   real (invisible) textarea underneath, or the visual cursor position
+   drifts away from where edits actually happen. Color-only is safe. */
+.hl-marker { color: var(--blue); }
 .hl-invalid { color: var(--gray); text-decoration: underline wavy var(--pink); text-decoration-thickness: 1px; }
 .hl-math { color: #8b5cf6; background: rgba(139, 92, 246, 0.08); }
 .hl-code { color: var(--ink); background: var(--paper-alt); }
