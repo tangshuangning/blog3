@@ -99,6 +99,20 @@ function renderLines(lines) {
     const line = raw;
     if (/^\s*$/.test(line)) { closeList(); i++; continue; }
 
+    // multi-line display math: a line that's just "$$" opens a block,
+    // consumed until the next line that's just "$$" — without this,
+    // "$$" / formula / "$$" on separate lines gets split into three
+    // separate <p> tags and KaTeX can never see it as one formula.
+    if (line.trim() === '$$') {
+      closeList();
+      let j = i + 1;
+      const mathLines = [];
+      while (j < lines.length && lines[j].trim() !== '$$') { mathLines.push(lines[j]); j++; }
+      html += `<div class="math-block">$$${mathLines.join('\n')}$$</div>`;
+      i = j + 1;
+      continue;
+    }
+
     let m;
 
     // collapsible callout box: ::::info[title]{open} ... ::::
@@ -866,6 +880,16 @@ function editPage(post, isNew, user) {
           var line = raw;
           if (/^\\s*$/.test(line)) { closeList(); i++; continue; }
 
+          if (line.trim() === '$$') {
+            closeList();
+            var jMath = i + 1;
+            var mathLines = [];
+            while (jMath < lines.length && lines[jMath].trim() !== '$$') { mathLines.push(lines[jMath]); jMath++; }
+            html += '<div class="math-block">$$' + mathLines.join('\\n') + '$$</div>';
+            i = jMath + 1;
+            continue;
+          }
+
           var m;
           if ((m = line.match(CALLOUT_OPEN_RE))) {
             closeList();
@@ -990,9 +1014,36 @@ function editPage(post, isNew, user) {
         highlight.scrollLeft = textarea.scrollLeft;
       }
 
+      // ── sync scrolling between the editor and the preview pane ──────────
+      // Percentage-based (not pixel-for-pixel) since the two panes have
+      // different content heights. A guard flag stops the two scroll
+      // listeners from bouncing off each other infinitely.
+      var isSyncingScroll = false;
+      function scrollRatio(el) {
+        var max = el.scrollHeight - el.clientHeight;
+        return max > 0 ? el.scrollTop / max : 0;
+      }
+      function applyScrollRatio(el, ratio) {
+        var max = el.scrollHeight - el.clientHeight;
+        el.scrollTop = ratio * max;
+      }
+
       textarea.addEventListener('scroll', function () {
         highlight.scrollTop = textarea.scrollTop;
         highlight.scrollLeft = textarea.scrollLeft;
+        if (isSyncingScroll) return;
+        isSyncingScroll = true;
+        applyScrollRatio(preview, scrollRatio(textarea));
+        requestAnimationFrame(function () { isSyncingScroll = false; });
+      });
+
+      preview.addEventListener('scroll', function () {
+        if (isSyncingScroll) return;
+        isSyncingScroll = true;
+        applyScrollRatio(textarea, scrollRatio(preview));
+        highlight.scrollTop = textarea.scrollTop;
+        highlight.scrollLeft = textarea.scrollLeft;
+        requestAnimationFrame(function () { isSyncingScroll = false; });
       });
 
       function updatePreview() {
