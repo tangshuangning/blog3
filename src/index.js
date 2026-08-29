@@ -1370,21 +1370,25 @@ function adminUsersPage(users, query, currentUser, env) {
     ? users.map((u) => {
         const isRoot = isAdminUsername(env, u.username);
         const isSelf = u.username === currentUser.username;
-        let action;
+        let roleAction;
         if (isRoot) {
-          action = `<span class="admin-self-note">（环境变量根管理员，面板无法修改）</span>`;
+          roleAction = `<span class="admin-self-note">（环境变量根管理员，面板无法修改角色）</span>`;
         } else if (isSelf) {
-          action = `<span class="admin-self-note">（你自己）</span>`;
+          roleAction = `<span class="admin-self-note">（你自己）</span>`;
         } else {
-          action = `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`;
+          roleAction = `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`;
         }
+        const deleteAction = isSelf
+          ? ''
+          : `<button type="button" class="btn btn-sm btn-delete" onclick="deleteAccount('${u.username}')">🗑 删除账号</button>`;
         return `
       <div class="admin-user-row">
         <div class="admin-user-info">
           <strong>${escapeHtml(u.username)}</strong>
         </div>
         <span class="admin-role-badge admin-role-${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
-        ${action}
+        ${roleAction}
+        ${deleteAction}
       </div>`;
       }).join('')
     : `<p class="comment-empty">没有匹配的账号。</p>`;
@@ -1412,6 +1416,17 @@ function adminUsersPage(users, query, currentUser, env) {
         window.location.reload();
       } else {
         alert((await res.text()) || '操作失败');
+      }
+    }
+    async function deleteAccount(username) {
+      if (!confirm('确定要永久删除账号「' + username + '」吗？这个操作无法撤销。')) return;
+      const res = await fetch('/api/admin/users/' + encodeURIComponent(username) + '/delete', {
+        method: 'POST',
+      });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        alert((await res.text()) || '删除失败');
       }
     }
   </script>`;
@@ -1513,6 +1528,14 @@ async function addToUsersIndex(env, username) {
     await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(usernames));
   }
 }
+async function removeFromUsersIndex(env, username) {
+  const usernames = await getUsersIndex(env);
+  const norm = cleanUsername(username);
+  const next = usernames.filter((u) => u !== norm);
+  if (next.length !== usernames.length) {
+    await env.POSTS.put(USERS_INDEX_KEY, JSON.stringify(next));
+  }
+}
 
 async function getUser(env, username) {
   return env.POSTS.get(`user:${cleanUsername(username)}`, 'json');
@@ -1520,6 +1543,10 @@ async function getUser(env, username) {
 async function saveUser(env, user) {
   await env.POSTS.put(`user:${cleanUsername(user.username)}`, JSON.stringify(user));
   await addToUsersIndex(env, user.username);
+}
+async function deleteUser(env, username) {
+  await env.POSTS.delete(`user:${cleanUsername(username)}`);
+  await removeFromUsersIndex(env, username);
 }
 async function listUsers(env) {
   const usernames = await getUsersIndex(env);
@@ -1672,6 +1699,22 @@ export default {
         if (!target) return text('账号不存在', 404);
         target.role = body.role;
         await saveUser(env, target);
+        return json({ ok: true });
+      }
+
+      // POST /api/admin/users/:username/delete — only root admins. Unlike
+      // the role toggle, this is allowed even on root-listed usernames
+      // (useful for cleaning up stray/duplicate accounts) — the only
+      // guard is against deleting your own currently-logged-in account.
+      m = pathname.match(/^\/api\/admin\/users\/([^/]+)\/delete$/);
+      if (request.method === 'POST' && m) {
+        if (!user) return text('请先登录', 401);
+        if (!isAdminUsername(env, user.username)) return text('没有权限', 403);
+        const targetUsername = decodeURIComponent(m[1]);
+        if (targetUsername === user.username) return text('不能删除自己当前登录的账号', 400);
+        const target = await getUser(env, targetUsername);
+        if (!target) return text('账号不存在', 404);
+        await deleteUser(env, targetUsername);
         return json({ ok: true });
       }
 
