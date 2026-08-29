@@ -1048,6 +1048,7 @@ body.is-col-resizing *, body.is-row-resizing * { user-select: none !important; }
 }
 .admin-user-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 160px; }
 .admin-user-info strong { font-family: var(--font-display); font-size: 1rem; }
+.admin-user-info .admin-user-email { display: block; font-family: var(--font-mono); font-size: 0.72rem; color: var(--pink); margin-top: 2px; }
 .admin-role-badge {
   font-family: var(--font-mono);
   font-size: 0.7rem;
