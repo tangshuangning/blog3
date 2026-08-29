@@ -1368,23 +1368,28 @@ function loginPage() {
 function adminUsersPage(users, query, currentUser, env) {
   const rows = users.length
     ? users.map((u) => {
+        const key = u._rawKey || u.username;
         const isRoot = isAdminUsername(env, u.username);
-        const isSelf = u.username === currentUser.username;
+        const isSelf = key === currentUser.username;
         let roleAction;
         if (isRoot) {
           roleAction = `<span class="admin-self-note">（环境变量根管理员，面板无法修改角色）</span>`;
         } else if (isSelf) {
           roleAction = `<span class="admin-self-note">（你自己）</span>`;
         } else {
-          roleAction = `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`;
+          roleAction = `<button type="button" class="btn btn-sm ${u.role === 'admin' ? 'btn-delete' : 'btn-edit'}" onclick="toggleRole('${key}', '${u.role === 'admin' ? 'user' : 'admin'}')">${u.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`;
         }
         const deleteAction = isSelf
           ? ''
-          : `<button type="button" class="btn btn-sm btn-delete" onclick="deleteAccount('${u.username}')">🗑 删除账号</button>`;
+          : `<button type="button" class="btn btn-sm btn-delete" onclick="deleteAccount('${key}')">🗑 删除账号</button>`;
+        const keyMismatchNote = key !== u.username
+          ? `<span class="admin-user-email">（存储标识：${escapeHtml(key)}，历史遗留，跟显示名大小写不一致）</span>`
+          : '';
         return `
       <div class="admin-user-row">
         <div class="admin-user-info">
           <strong>${escapeHtml(u.username)}</strong>
+          ${keyMismatchNote}
         </div>
         <span class="admin-role-badge admin-role-${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
         ${roleAction}
@@ -1550,7 +1555,15 @@ async function deleteUser(env, username) {
 }
 async function listUsers(env) {
   const usernames = await getUsersIndex(env);
-  const users = await Promise.all(usernames.map((u) => getUser(env, u)));
+  const users = await Promise.all(usernames.map(async (rawKey) => {
+    const u = await getUser(env, rawKey);
+    if (!u) return null;
+    // _rawKey is the actual index/storage key for this record. Normally
+    // identical to u.username, but can differ for accounts created before
+    // usernames became case-sensitive — using this (not u.username) for
+    // admin actions ensures we always operate on the real record.
+    return { ...u, _rawKey: rawKey };
+  }));
   return users.filter(Boolean).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 }
 function searchUsers(users, query) {
