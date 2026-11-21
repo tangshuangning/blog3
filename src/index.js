@@ -21,7 +21,7 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml2(title)} \xB7 ${SITE_NAME}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='black'/%3E%3Crect x='4' y='4' width='24' height='24' fill='%23F7DC6F'/%3E%3Crect x='9' y='9' width='14' height='14' fill='black'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/style.css?v=admin-name-sweep-3" />
+<link rel="stylesheet" href="/style.css?v=admin-name-sweep-7" />
 ${math3?'<link rel="stylesheet" href="/math.css?v=1" />':""}
 <style>
   #cursor-effect { position: fixed; inset: 0; pointer-events: none; z-index: 10000; }
