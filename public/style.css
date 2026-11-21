@@ -1450,12 +1450,6 @@ body { background: transparent; isolation: isolate; }
   color: #9feff1;
   font: 800 1.7rem/1 var(--font-mono);
 }
-.profile-role {
-  display: inline-block;
-  margin-top: 8px;
-  color: var(--night-muted);
-  font-size: .86rem;
-}
 .profile-stats {
   display: flex;
   flex-wrap: wrap;
@@ -1488,7 +1482,7 @@ a.author-name { text-decoration: underline; text-underline-offset: .2em; }
 .post-card-link::after { content: ''; position: absolute; inset: 0; }
 .post-card-date .author-name { position: relative; z-index: 1; }
 .post-card:focus-within { outline: 3px solid var(--neon); outline-offset: 3px; }
-.site-nav > a.nav-user {
+#site-nav .nav-user {
   color: var(--night-text);
   max-width: min(18rem, 58vw);
   white-space: normal;
@@ -1527,3 +1521,50 @@ a.author-name:hover { text-decoration-thickness: .13em; }
 @media (forced-colors: active) {
   .admin-gradient { background-image: none; -webkit-text-fill-color: currentColor; }
 }
+
+
+.author-identity {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .42em;
+  max-inline-size: 100%;
+}
+.admin-tag {
+  display: inline-block;
+  flex: 0 0 auto;
+  max-inline-size: min(100%, 18rem);
+  padding: .16em .5em;
+  border: 1px solid #82acb6;
+  border-radius: .28em;
+  background: #e6f4f4;
+  color: #124c5d;
+  font: 750 .72rem/1.28 var(--font-body);
+  text-transform: none;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+.site-header .admin-tag, .profile-panel .admin-tag {
+  background: #16394b;
+  border-color: #50788e;
+  color: #bbf7ff;
+}
+.profile-heading .admin-tag { font-size: .81rem; }
+.nav-identity { gap: .45rem; }
+.admin-tag-form {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.admin-tag-form input {
+  width: min(10.5rem, 65vw);
+  padding: .42rem .48rem;
+  border: 1px solid #8ea6a6;
+  border-radius: .2rem;
+  background: #fff;
+  color: #142734;
+  font: inherit;
+  font-size: .85rem;
+}
+.admin-tag-note { color: var(--gray); font-size: .83rem; margin-bottom: .55rem; }
