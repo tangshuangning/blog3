@@ -1531,23 +1531,94 @@ a.author-name:hover { text-decoration-thickness: .13em; }
   max-inline-size: 100%;
 }
 .admin-tag {
+  --cut-x: .82em;
+  --cut-y: .58em;
+  --tag-text: #4c3179;
+  --tag-rainbow: #9b235e, #6533a1, #155ba3, #036e69, #8e481e,
+    #9b235e, #6533a1, #155ba3, #036e69, #8e481e, #9b235e;
+  --tag-edge: linear-gradient(100deg, #f05ca1, #a57cfd, #5fbeff, #5edbc3, #f6b863,
+    #f05ca1, #a57cfd, #5fbeff, #5edbc3, #f6b863, #f05ca1);
+  --tag-glass: #f0f7faf5;
+  --tag-light: #ffffed9c;
+  --tag-tint: #c7b4ef4a;
+  --tag-grain: #fff3;
+  position: relative;
+  isolation: isolate;
   display: inline-block;
   flex: 0 0 auto;
   max-inline-size: min(100%, 18rem);
-  padding: .16em .5em;
-  border: 1px solid #82acb6;
-  border-radius: .28em;
-  background: #e6f4f4;
-  color: #124c5d;
+  padding: .36em .94em .52em;
+  color: var(--tag-text);
   font: 750 .72rem/1.28 var(--font-body);
+  text-align: center;
   text-transform: none;
-  letter-spacing: normal;
+  letter-spacing: .015em;
   overflow-wrap: anywhere;
+  filter: drop-shadow(0 1px 0 #192f51be) drop-shadow(0 3px 2px #111d4159);
+}
+.admin-tag::before, .admin-tag::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  clip-path: polygon(var(--cut-x) 0, calc(100% - var(--cut-x)) 0,
+    100% var(--cut-y), 100% calc(100% - var(--cut-y)), calc(100% - var(--cut-x)) 100%,
+    var(--cut-x) 100%, 0 calc(100% - var(--cut-y)), 0 var(--cut-y));
+}
+.admin-tag::before {
+  z-index: -2;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse at 27% 0%, #fff 0, #fff9 17%, transparent 37%),
+    linear-gradient(180deg, #fffffff0 0 1px, #fff4 2px, transparent 26% 69%, #25347080 96%, #111b4cbd),
+    conic-gradient(from -49deg at 50% 45%, #fff6 0deg 98deg, #bff8 98deg 129deg,
+      #21417544 129deg 181deg, #25296560 181deg 276deg, #64377911 276deg 316deg, #ffec 316deg 360deg),
+    var(--tag-edge);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 200% 100%;
+  animation: admin-tag-edge-flow 6s linear infinite;
+}
+.admin-tag::after {
+  z-index: -1;
+  inset: .19em .24em .34em;
+  --cut-x: .66em;
+  --cut-y: .41em;
+  background:
+    linear-gradient(158deg, var(--tag-light), transparent 65%),
+    repeating-linear-gradient(130deg, var(--tag-grain) 0 .45px, transparent .45px 2.2px),
+    linear-gradient(145deg, transparent 28%, var(--tag-tint)),
+    var(--tag-glass);
+  -webkit-backdrop-filter: blur(8px) saturate(115%);
+  backdrop-filter: blur(8px) saturate(115%);
 }
 .site-header .admin-tag, .profile-panel .admin-tag {
-  background: #16394b;
-  border-color: #50788e;
-  color: #bbf7ff;
+  --tag-text: #c9ecff;
+  --tag-rainbow: #ffbde0, #dfcaff, #c4e6ff, #a2fff0, #ffe4ad,
+    #ffbde0, #dfcaff, #c4e6ff, #a2fff0, #ffe4ad, #ffbde0;
+  --tag-glass: #192e49f2;
+  --tag-light: #b0deff30;
+  --tag-tint: #4c577d64;
+  --tag-grain: #d7e6ff0a;
+}
+@keyframes admin-tag-edge-flow {
+  from { background-position: 0 0, 0 0, 0 0, 0 50%; }
+  to { background-position: 0 0, 0 0, 0 0, 100% 50%; }
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .admin-tag-text {
+    background-image: linear-gradient(90deg, var(--tag-rainbow));
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: admin-name-flow 6s linear infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-tag::before, .admin-tag-text { animation: none; }
+}
+@media (forced-colors: active) {
+  .admin-tag { border: 1px solid ButtonText; color: ButtonText; filter: none; }
+  .admin-tag::before, .admin-tag::after { content: none; }
+  .admin-tag-text { background-image: none; -webkit-text-fill-color: currentColor; }
 }
 .profile-heading .admin-tag { font-size: .81rem; }
 .nav-identity { gap: .45rem; }
