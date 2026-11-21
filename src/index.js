@@ -19,13 +19,16 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
   menu.className = 'mention-picker';
   menu.hidden = true;
   menu.innerHTML = '<p class="mention-picker-label">提及用户</p>'
+    + '<input class="mention-picker-search" type="search" role="combobox" aria-label="搜索用户名" aria-autocomplete="list" aria-expanded="true" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="21" placeholder="搜索用户名…">'
     + '<p class="mention-picker-status" role="status"></p>'
     + '<div id="mention-user-options" role="listbox" aria-label="可提及的用户"></div>';
   document.body.append(menu);
+  const search = menu.querySelector('input');
   const status = menu.querySelector('[role="status"]');
   const list = menu.querySelector('[role="listbox"]');
   field.setAttribute('aria-autocomplete', 'list');
   field.setAttribute('aria-controls', list.id);
+  search.setAttribute('aria-controls', list.id);
 
   let token, request, timer, activeIndex;
   let names = [];
@@ -51,6 +54,7 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
     cancelSearch();
     token = undefined;
     field.removeAttribute('aria-activedescendant');
+    search.removeAttribute('aria-activedescendant');
     menu.hidden = true;
   }
 
@@ -67,8 +71,8 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
     menu.style.left = Math.max(left, Math.min(rect.left, right - width)) + 'px';
     const below = bottom - rect.bottom - 6;
     const above = rect.top - top - 6;
-    const room = Math.max(below, above, 110);
-    menu.style.maxHeight = Math.min(250, room, bottom - top) + 'px';
+    const room = Math.max(below, above, 145);
+    menu.style.maxHeight = Math.min(288, room, bottom - top) + 'px';
     const height = menu.offsetHeight;
     const y = below >= height ? rect.bottom + 6 : above >= height ? rect.top - 6 - height : bottom - height;
     menu.style.top = Math.max(top, Math.min(y, bottom - height)) + 'px';
@@ -80,12 +84,14 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
     const option = list.children[index];
     option.setAttribute('aria-selected', 'true');
     field.setAttribute('aria-activedescendant', option.id);
+    search.setAttribute('aria-activedescendant', option.id);
     if (scroll) option.scrollIntoView({ block: 'nearest' });
   }
 
   function render(message) {
     list.replaceChildren();
     field.removeAttribute('aria-activedescendant');
+    search.removeAttribute('aria-activedescendant');
     status.textContent = message;
     status.hidden = !message;
     names.forEach((name, index) => {
@@ -101,20 +107,15 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
     placeMenu();
   }
 
-  function update() {
-    const next = currentToken();
-    if (!next) { close(); return; }
-    if (token?.start === next.start && token.query === next.query) { token = next; return; }
+  function searchUsers(query) {
     cancelSearch();
-    token = next;
     names = [];
-    menu.hidden = false;
     render('正在查找用户…');
     timer = setTimeout(async () => {
       request = new AbortController();
       const signal = request.signal;
       try {
-        const response = await fetch('/api/mentions/users?q=' + encodeURIComponent(next.query), { signal });
+        const response = await fetch('/api/mentions/users?q=' + encodeURIComponent(query), { signal });
         if (!response.ok) throw new Error('User search failed');
         const result = await response.json();
         if (signal.aborted) return;
@@ -123,7 +124,25 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
       } catch {
         if (!signal.aborted) render('暂时无法搜索用户，请稍后再试');
       }
-    }, next.query ? 160 : 0);
+    }, query ? 160 : 0);
+  }
+
+  function update() {
+    const next = currentToken();
+    if (!next) { close(); return; }
+    if (token?.start === next.start && token.query === next.query) { token = next; return; }
+    token = next;
+    search.value = next.query;
+    menu.hidden = false;
+    searchUsers(next.query);
+  }
+
+  function updateSearch(event) {
+    if (!event.isComposing && token) searchUsers(search.value.trim().replace(/^@/, ''));
+  }
+
+  function closeOnBlur(event) {
+    if (event.relatedTarget !== field && event.relatedTarget !== search) close();
   }
 
   function choose(index) {
@@ -149,15 +168,31 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
 
   field.addEventListener('input', update);
   field.addEventListener('click', update);
-  field.addEventListener('blur', close);
+  field.addEventListener('blur', closeOnBlur);
+  search.addEventListener('blur', closeOnBlur);
+  search.addEventListener('input', updateSearch);
+  search.addEventListener('compositionend', updateSearch);
   field.addEventListener('compositionstart', () => { composing = true; close(); });
   field.addEventListener('compositionend', () => { composing = false; update(); });
   field.addEventListener('keyup', event => {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) update();
   });
-  field.addEventListener('keydown', event => {
+  function handleKeys(event) {
     if (menu.hidden || composing || event.isComposing) return;
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (event.currentTarget === search) field.focus();
+      close();
+      return;
+    }
+    if (event.key === 'Tab') {
+      const nextField = event.shiftKey ? field : search;
+      if (event.currentTarget !== nextField) {
+        event.preventDefault();
+        nextField.focus();
+      }
+      return;
+    }
     if (!names.length) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -167,7 +202,9 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
       event.preventDefault();
       choose(activeIndex);
     }
-  });
+  }
+  field.addEventListener('keydown', handleKeys);
+  search.addEventListener('keydown', handleKeys);
   menu.addEventListener('mousedown', event => {
     if (event.target.closest('[role="option"]')) event.preventDefault();
   });
@@ -184,8 +221,9 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
   position: fixed;
   z-index: 1200;
   box-sizing: border-box;
-  overflow: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid #4b6683;
   border-radius: 10px;
@@ -198,6 +236,24 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
 .mention-picker-label, .mention-picker-status { margin: 0; padding: 6px 9px; }
 .mention-picker-label { font-weight: 750; }
 .mention-picker-status { color: var(--night-muted); }
+.mention-picker-search {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 4px;
+  padding: 7px 9px;
+  border: 1px solid #4b6683;
+  border-radius: 5px;
+  background: #091725;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  color-scheme: dark;
+}
+.mention-picker-search::placeholder { color: var(--night-muted); }
+.mention-picker-search:focus-visible { outline: 2px solid var(--neon); outline-offset: -2px; }
+.mention-picker [role="listbox"] { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .mention-picker [role="option"] {
   padding: 7px 9px;
   border: 1px solid transparent;
@@ -210,6 +266,63 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
   background: #173448;
   color: var(--neon);
 }
+`;var problems=[{id:"P1001",title:"A+B Problem",level:"\u5165\u95E8",statement:`## \u9898\u76EE\u63CF\u8FF0
+
+\u7ED9\u5B9A\u4E24\u4E2A\u6574\u6570 $A$ \u548C $B$\uFF0C\u6C42\u5B83\u4EEC\u7684\u548C\u3002
+
+## \u8F93\u5165\u683C\u5F0F
+
+\u4E00\u884C\u5305\u542B\u4E24\u4E2A\u6574\u6570 $A$ \u548C $B$\uFF0C\u7528\u7A7A\u683C\u5206\u9694\u3002
+
+## \u8F93\u51FA\u683C\u5F0F
+
+\u8F93\u51FA\u4E00\u884C\u4E00\u4E2A\u6574\u6570\uFF0C\u8868\u793A $A+B$ \u7684\u503C\u3002
+
+## \u6570\u636E\u8303\u56F4
+
+$-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 4",output:"-3"}]}];var problemBankStyle=`
+.problem-index, .problem-detail {
+  margin: clamp(24px, 5vw, 56px) auto;
+  padding: clamp(16px, 4vw, 36px);
+  border: 1px solid;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px #05091266;
+}
+.problem-index { background: var(--night-panel); border-color: var(--night-line); color: var(--night-text); }
+.problem-index-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.problem-index-header h1, .problem-detail h1 { margin: 0; font: 850 clamp(1.85rem, 5vw, 3rem)/1.1 var(--font-body); }
+.problem-index-header p { margin: 0; color: var(--night-muted); }
+.problem-list { margin: 20px 0 0; padding: 0; list-style: none; }
+.problem-list li + li { margin-top: 8px; }
+.problem-row {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 2.5vw, 18px);
+  padding: 14px 12px;
+  background: #0b1929;
+  border: 1px solid var(--night-line);
+  border-radius: 6px;
+  color: var(--night-text);
+  text-decoration: none;
+}
+.problem-row:hover, .problem-row:focus-visible { border-color: var(--neon); background: #142b40; color: var(--night-text); }
+.problem-row strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.problem-id, .problem-level { white-space: nowrap; }
+.problem-id { font-family: var(--font-mono); }
+.problem-row .problem-id { color: var(--neon); }
+.problem-level { padding: 3px 7px; border-radius: 4px; font-size: .8rem; font-weight: 700; }
+.problem-row .problem-level { background: #183832; color: #bbefce; }
+.problem-arrow { color: var(--neon); }
+.problem-detail { max-width: 880px; border-color: #92a7b5; background: var(--paper); color: var(--ink); }
+.problem-trail { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; font-size: .9rem; }
+.problem-trail a { color: var(--link); }
+.problem-detail .problem-level { display: inline-block; margin-top: 12px; background: #dcebdc; color: #234b37; }
+.problem-detail .prose { margin-top: 26px; }
+.problem-detail .prose h2 { margin: 1.1em 0 .35em; }
+.problem-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; }
+.problem-samples .code-block { margin: 0; }
+.problem-samples .code-bar { justify-content: space-between; }
+@media (max-width: 480px) { .problem-samples { grid-template-columns: 1fr; } }
 `;var SITE_NAME="\u91CE\u86EE\u751F\u957F";var DEFAULT_OWNER_USERNAME="Chegada_";var ADMIN_TAG_MAX=24;var DEFAULT_ADMIN_TAG="\u7BA1\u7406\u5458";var SITE_TAGLINE="NEO-BRUTALIST NOTES \xB7 Chegada \xB7 CSP-S";function escapeHtml2(value){return String(value??"").replace(/[&<>"']/g,ch2=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch2])}function slugify(title){const base2=title.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-+|-+$/g,"");return base2||`post-${Date.now()}`}function profilePath(username){return"/users/"+encodeURIComponent(username)}function mentionLink(username,accounts){if(!accounts.has(username))return void 0;return`<a class="mention-link" href="${profilePath(username)}">@${escapeHtml2(username)}</a>`}function linkedComment(content,accounts){let output="",end=0;for(const match of plainMentions(content)){output+=escapeHtml2(content.slice(end,match.index));output+=mentionLink(match[1],accounts)??escapeHtml2(match[0]);end=match.index+match[0].length}return output+escapeHtml2(content.slice(end))}function adminTag(account){if(account?.role!=="admin"&&!account?.isRootAdmin)return"";return`<span class="admin-tag"><span class="admin-tag-text">${escapeHtml2(account.adminTag||DEFAULT_ADMIN_TAG)}</span></span>`}function displayName(username,isAdmin){const text4=escapeHtml2(username);return isAdmin?`<span class="admin-name-label"><span class="admin-name-text">${text4}</span></span>`:text4}function authorName(username,accounts,link2=true){if(!username)return"\u533F\u540D";const account=accounts.get(username);const isAdmin=account?.role==="admin";const css2="author-name"+(isAdmin?" admin-gradient":"");const name=displayName(username,isAdmin);const label=link2?`<a class="${css2}" href="${profilePath(username)}">${name}</a>`:`<span class="${css2}">${name}</span>`;const tag=adminTag(account);return tag?`<span class="author-identity">${label}${tag}</span>`:label}function layout({title,body,active="",user=null,math:math3=false,mentionPicker=false}){const isAdmin=user?.role==="admin"||user?.isRootAdmin;const navAuth=user?`<span class="author-identity nav-identity"><a class="nav-user author-name${isAdmin?" admin-gradient":""}" href="${profilePath(user.username)}" aria-label="\u6211\u7684\u4E3B\u9875 \xB7 ${escapeHtml2(user.username)}" data-tooltip="\u6211\u7684\u4E3B\u9875">${displayName(user.username,isAdmin)}</a>${adminTag(user)}</span>
        <a href="#" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/');return false;" class="${active==="login"?"is-active":""}">\u9000\u51FA</a>`:`<a href="/login" class="${active==="login"?"is-active":""}">\u767B\u5F55</a>`;return`<!doctype html>
 <html lang="zh-CN">
@@ -228,6 +341,7 @@ ${math3?'<link rel="stylesheet" href="/math.css?v=1" />':""}
   #cursor-ring { width: 38px; height: 38px; border: 2px solid #6cfde7; box-shadow: 0 0 0 1px #173047, 0 0 10px #15d9e87d; }
 </style>
 ${mentionPicker?`<style>${mentionPickerStyle}</style>`:""}
+${active==="problems"?`<style>${problemBankStyle}</style>`:""}
 </head>
 <body>
 <div class="pcb-backdrop" aria-hidden="true">
@@ -244,6 +358,7 @@ ${mentionPicker?`<style>${mentionPickerStyle}</style>`:""}
   <nav class="site-nav" id="site-nav" aria-label="\u7F51\u7AD9\u5BFC\u822A">
     <a href="/" ${active==="home"?'aria-current="page"':""} class="${active==="home"?"is-active":""}">\u9996\u9875</a>
     <a href="/articles" ${active==="articles"?'aria-current="page"':""} class="${active==="articles"?"is-active":""}">\u5168\u90E8\u6587\u7AE0</a>
+    <a href="/problems" ${active==="problems"?'aria-current="page" class="is-active"':""}>\u9898\u5E93</a>
     ${user?`<a href="/new" class="btn-nav-new ${active==="new"?"is-active":""}">+ \u53D1\u65B0\u5E16</a>`:""}
     ${user&&user.isRootAdmin?`<a href="/admin/users" class="${active==="admin-users"?"is-active":""}">\u8D26\u53F7\u7BA1\u7406</a>`:""}
     ${navAuth}
@@ -312,7 +427,7 @@ ${body}
       button.textContent = '\u4EE3\u7801\u5DF2\u9009\u4E2D';
     }
     clearTimeout(button.copyTimer);
-    button.copyTimer = setTimeout(() => { button.textContent = '\u590D\u5236\u4EE3\u7801'; }, 1600);
+    button.copyTimer = setTimeout(() => { button.textContent = button.dataset.copyLabel || '\u590D\u5236\u4EE3\u7801'; }, 1600);
   });
 <\/script>
 <script>${effects_generated_default}<\/script>
@@ -1217,7 +1332,28 @@ ${escapeHtml2(p.content||"")}</textarea>
         location.href = '/posts/' + encodeURIComponent(data.slug);
       });
     });
-  <\/script>`;return layout({title:isNew?"\u65B0\u5EFA\u5E16\u5B50":`\u7F16\u8F91 \xB7 ${p.title}`,body,active:isNew?"new":"",user,math:true,mentionPicker:true})}function notFoundPage(user){const body=`<section class="not-found">
+  <\/script>`;return layout({title:isNew?"\u65B0\u5EFA\u5E16\u5B50":`\u7F16\u8F91 \xB7 ${p.title}`,body,active:isNew?"new":"",user,math:true,mentionPicker:true})}function problemIndexPage(user){const rows=problems.map(problem=>`<li><a class="problem-row" href="/problems/${encodeURIComponent(problem.id)}">
+    <span class="problem-id">${escapeHtml2(problem.id)}</span><strong>${escapeHtml2(problem.title)}</strong>
+    <span class="problem-level">${escapeHtml2(problem.level)}</span><span class="problem-arrow" aria-hidden="true">\u2197</span>
+  </a></li>`).join("");const body=`<section class="problem-index" aria-labelledby="problem-index-title">
+    <header class="problem-index-header"><h1 id="problem-index-title">\u9898\u5E93</h1><p>\u5171 ${problems.length} \u9898</p></header>
+    <ul class="problem-list">${rows}</ul>
+  </section>`;return layout({title:"\u9898\u5E93",body,active:"problems",user})}function problemSample(label,value){return`<div class="code-block">
+    <div class="code-bar"><span>${escapeHtml2(label)}</span>
+      <button type="button" class="copy-code" data-copy-label="\u590D\u5236" aria-label="\u590D\u5236${escapeHtml2(label)}">\u590D\u5236</button>
+    </div>
+    <pre><code>${escapeHtml2(value)}</code></pre>
+  </div>`}function problemPage(problem,user){const{id,title,level,statement,samples}=problem;const samplePairs=samples.map((sample,index)=>`<div class="problem-samples">
+    ${problemSample(`\u6837\u4F8B ${index+1} \u8F93\u5165`,sample.input)}
+    ${problemSample(`\u6837\u4F8B ${index+1} \u8F93\u51FA`,sample.output)}
+  </div>`).join("");const body=`<article class="problem-detail">
+    <nav class="problem-trail" aria-label="\u5F53\u524D\u4F4D\u7F6E"><a href="/problems">\u9898\u5E93</a><span aria-hidden="true">/</span><span class="problem-id">${escapeHtml2(id)}</span></nav>
+    <h1>${escapeHtml2(title)}</h1>
+    <span class="problem-level">${escapeHtml2(level)}</span>
+    <div class="prose">${renderArticle(parseArticle(statement))}
+      <h2>\u8F93\u5165\u8F93\u51FA\u6837\u4F8B</h2>${samplePairs}
+    </div>
+  </article>`;return layout({title:`${id} ${title}`,body,active:"problems",user,math:true})}function notFoundPage(user){const body=`<section class="not-found">
     <h1>404</h1>
     <p>\u4FE1\u53F7\u4E22\u5931\uFF0C\u8FD9\u4E2A\u9875\u9762\u4E0D\u5B58\u5728\u3002</p>
     <a href="/" class="btn btn-edit">\u56DE\u5230\u9996\u9875</a>
@@ -1355,4 +1491,4 @@ ${escapeHtml2(p.content||"")}</textarea>
       LIMIT ?
     `).bind(normalized,query,normalized,MENTION_SUGGESTION_LIMIT).all();return results.map(row=>row.name)}const rank=name=>name===query?0:name.toLowerCase().startsWith(normalized)?1:2;const compare=(a,b)=>rank(a)-rank(b)||a.localeCompare(b,"zh-CN");const keys=(await getUsersIndex(env)).filter(key=>key.toLowerCase().includes(normalized)).sort(compare);const names=new Set;for(let i2=0;i2<keys.length&&names.size<MENTION_SUGGESTION_LIMIT;i2+=16){const records=await env.POSTS.get(keys.slice(i2,i2+16).map(key=>"user:"+key),"json");for(const user of records.values()){if(typeof user?.username==="string"&&user.username.toLowerCase().includes(normalized))names.add(user.username)}}return[...names].sort(compare).slice(0,MENTION_SUGGESTION_LIMIT)}function isAdminUsername(env,username){const list2=(env.ADMIN_USERNAMES||"").split(",").map(s=>cleanUsername(s)).filter(Boolean);return list2.includes(cleanUsername(username))}async function getComments(env,slug){if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare("SELECT data FROM blog_comments WHERE slug=? ORDER BY seq").bind(slug).all();return results.map(row=>JSON.parse(row.data))}const list2=await env.POSTS.get(`comments:${slug}`,"json");return Array.isArray(list2)?list2:[]}async function addComment(env,slug,comment){if(env.BLOG_DB){const result=await env.BLOG_DB.prepare(`INSERT INTO blog_comments (slug,id,author,data)
       SELECT slug,?,?,? FROM blog_posts WHERE slug=?`).bind(comment.id,comment.authorUsername,JSON.stringify(comment),slug).run();if(!result.meta.changes)throw new RequestError("\u5E16\u5B50\u4E0D\u5B58\u5728",404);return}const list2=await getComments(env,slug);list2.push(comment);await env.POSTS.put(`comments:${slug}`,JSON.stringify(list2))}async function deleteComment(env,slug,commentId,requester){if(env.BLOG_DB){const result=await env.BLOG_DB.prepare("DELETE FROM blog_comments WHERE slug=? AND id=? AND (author=? OR ?=1)").bind(slug,commentId,requester.username,Number(requester.role==="admin")).run();return result.meta.changes>0}const list2=await getComments(env,slug);const idx=list2.findIndex(c2=>c2.id===commentId);if(idx===-1)return false;const comment=list2[idx];if(comment.authorUsername!==requester.username&&requester.role!=="admin")return false;list2.splice(idx,1);await env.POSTS.put(`comments:${slug}`,JSON.stringify(list2));return true}var INDEX_KEY="index";async function getIndex(env){const raw=await env.POSTS.get(INDEX_KEY,"json");return Array.isArray(raw)?raw:[]}async function addToIndex(env,slug){const slugs=await getIndex(env);if(!slugs.includes(slug)){slugs.push(slug);await env.POSTS.put(INDEX_KEY,JSON.stringify(slugs))}}async function removeFromIndex(env,slug){const slugs=await getIndex(env);const next=slugs.filter(s=>s!==slug);if(next.length!==slugs.length){await env.POSTS.put(INDEX_KEY,JSON.stringify(next))}}async function getPostPage(env,q,requestedPage,author=null){const terms=[...new Set(q.toLowerCase().split(/\s+/).filter(Boolean))];const db=env.BLOG_DB;if(db){const filters=[];const params=[];if(author!==null){filters.push("json_extract(data, '$.authorUsername') = ?");params.push(author)}if(terms.length){filters.push("("+terms.map(()=>"instr(search_text, ?) > 0").join(" OR ")+")");params.push(...terms)}const clause=filters.length?" WHERE "+filters.join(" AND "):"";const count=await db.prepare("SELECT COUNT(*) AS total FROM blog_posts"+clause).bind(...params).first();const total2=count.total,totalPages2=Math.max(1,Math.ceil(total2/PAGE_SIZE));const page2=Math.min(Math.max(1,requestedPage),totalPages2);const{results}=await db.prepare(`SELECT slug, json_remove(data, '$.content') AS data FROM blog_posts${clause}
-      ORDER BY date DESC, slug LIMIT ? OFFSET ?`).bind(...params,PAGE_SIZE,(page2-1)*PAGE_SIZE).all();return{posts:results.map(row=>normalizePost(JSON.parse(row.data),row.slug)).filter(Boolean),q,page:page2,totalPages:totalPages2,total:total2}}const slugs=await getIndex(env);const posts=(await Promise.all(slugs.map(slug=>getPost(env,slug)))).filter(Boolean).filter(post=>author===null||post.authorUsername===author).filter(post=>!terms.length||terms.some(term=>searchableText(post).includes(term))).sort((a,b)=>b.pubDate.localeCompare(a.pubDate));const total=posts.length,totalPages=Math.max(1,Math.ceil(total/PAGE_SIZE));const page=Math.min(Math.max(1,requestedPage),totalPages);return{posts:posts.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE),q,page,totalPages,total}}async function getPost(env,slug){if(env.BLOG_DB){const row=await env.BLOG_DB.prepare("SELECT data FROM blog_posts WHERE slug=?").bind(slug).first();return row?normalizePost(JSON.parse(row.data),slug):null}return normalizePost(await env.POSTS.get(`post:${slug}`,"json"),slug)}async function savePost(env,slug,data,create=false){if(env.BLOG_DB){const db=env.BLOG_DB;const serialized=JSON.stringify(data);const searchable=searchableText(data);const encoder=new TextEncoder;if(encoder.encode(serialized).byteLength+encoder.encode(searchable).byteLength>195e4){throw new RequestError("\u6587\u7AE0\u592A\u5927\u3002\u5EFA\u8BAE\u628A\u5927\u56FE\u6539\u7528\u56FE\u7247\u94FE\u63A5\u3002",413)}const result=create?await db.prepare("INSERT INTO blog_posts (data,date,search_text,slug) VALUES (?,?,?,?) ON CONFLICT(slug) DO NOTHING").bind(serialized,data.pubDate,searchable,slug).run():await db.prepare("UPDATE blog_posts SET data=?, date=?, search_text=? WHERE slug=?").bind(serialized,data.pubDate,searchable,slug).run();return result.meta.changes>0}await env.POSTS.put(`post:${slug}`,JSON.stringify(data));await addToIndex(env,slug);return true}async function deletePost(env,slug){if(env.BLOG_DB){await env.BLOG_DB.prepare("DELETE FROM blog_posts WHERE slug=?").bind(slug).run();return}await env.POSTS.delete(`post:${slug}`);await removeFromIndex(env,slug);await env.POSTS.delete(`comments:${slug}`)}function canEditPost(user,post){if(!user)return false;return user.role==="admin"||user.username===post.authorUsername}var worker_default={async fetch(request,env){const url=new URL(request.url);const{pathname}=url;if(pathname==="/math.css"){return new Response(style_generated_default,{headers:{"Content-Type":"text/css; charset=UTF-8","Cache-Control":"public, max-age=86400"}})}if(pathname==="/style.css"||pathname==="/pcb-chip-loop.mp4"||pathname==="/pcb-chip-poster.webp"){return env.ASSETS.fetch(request)}try{if(request.method==="POST"&&env.BLOG_READ_ONLY==="1"&&pathname!=="/api/preview"){return text3("\u7F51\u7AD9\u6682\u65F6\u5904\u4E8E\u53EA\u8BFB\u72B6\u6001\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",503)}const origin=request.headers.get("Origin");if(request.method==="POST"&&(origin&&origin!==url.origin||request.headers.get("Sec-Fetch-Site")==="cross-site")){return text3("\u8BF7\u6C42\u6765\u6E90\u4E0D\u7B26\u3002",403)}const user=await getSessionUser(request,env);if(request.method==="GET"&&pathname==="/api/mentions/users"){if(!user)return json({error:"\u8BF7\u5148\u767B\u5F55"},401);const query=url.searchParams.get("q")||"";if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{0,20}$/.test(query))return json({usernames:[]});await enforceRate(request,env,"mention-search",90,user);return json({usernames:await findMentionUsernames(env,query)})}if(request.method==="GET"&&pathname==="/api/notifications/unread"){if(!user)return json({error:"\u8BF7\u5148\u767B\u5F55"},401);const{unread,more}=await readInbox(env,user);return json({unread,more})}if(request.method==="GET"&&pathname==="/notifications"){if(!user)return redirect("/login");return html(notificationsPage(user,await readInbox(env,user)))}if(request.method==="POST"&&pathname==="/notifications/read"){if(!user)return redirect("/login");const through=Number(url.searchParams.get("through"));if(!Number.isSafeInteger(through)||through<=0||through>Date.now()){return text3("\u901A\u77E5\u65F6\u95F4\u65E0\u6548\u3002",400)}await markInboxRead(env,user,through);if(request.headers.get("Accept")==="application/json"){const{unread,more}=await readInbox(env,user,through);return json({unread,more})}return redirect("/notifications")}if(request.method==="GET"&&(pathname==="/"||pathname==="/articles"||pathname==="/articles/")){const archive=pathname!=="/";const owner=cleanUsername(env.BLOG_OWNER_USERNAME)||DEFAULT_OWNER_USERNAME;const q=(url.searchParams.get("q")||"").trim().slice(0,120);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const page=await getPostPage(env,q,requestedPage,archive?null:owner);const accounts=await getPublicAuthors(env,page.posts.map(post=>post.authorUsername));return html(homePage(page.posts,page,user,accounts,archive))}const profileMatch=pathname.match(/^\/users\/([^/]+)\/?$/);if(request.method==="GET"&&profileMatch){let username;try{username=decodeURIComponent(profileMatch[1])}catch{return html(notFoundPage(user),404)}if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username))return html(notFoundPage(user),404);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const[accounts,page]=await Promise.all([getPublicAuthors(env,[username]),getPostPage(env,"",requestedPage,username)]);if(!accounts.has(username)&&!page.total)return html(notFoundPage(user),404);return html(userProfilePage(username,page,accounts,user))}if(request.method==="GET"&&pathname==="/login"){if(user)return redirect("/");return html(loginPage())}if(request.method==="GET"&&pathname==="/admin/users"){if(!user)return redirect("/login");if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const q=(url.searchParams.get("q")||"").slice(0,120);const allUsers=await listUsers(env);const filtered=q.trim()?searchUsers(allUsers,q):allUsers;return html(await adminUsersPage(filtered,q,user,env))}let m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(isAdminUsername(env,targetUsername)){return text3("\u8FD9\u4E2A\u8D26\u53F7\u662F\u73AF\u5883\u53D8\u91CF\u91CC\u914D\u7F6E\u7684\u6839\u7BA1\u7406\u5458\uFF0C\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403)}const body=await readJson(request);if(body.role!=="admin"&&body.role!=="user")return text3("\u89D2\u8272\u53C2\u6570\u4E0D\u5BF9",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);if(isAdminUsername(env,target.username))return text3("\u6839\u7BA1\u7406\u5458\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403);target.role=body.role;await saveUser(env,target,cleanUsername(targetUsername));return json({ok:true})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/tag$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!user.isRootAdmin)return text3("\u53EA\u6709\u6839\u7BA1\u7406\u5458\u53EF\u4EE5\u4FEE\u6539\u7BA1\u7406\u5458\u6807\u7B7E",403);let key;try{key=decodeURIComponent(m[1])}catch{return text3("\u8D26\u53F7\u53C2\u6570\u4E0D\u5BF9",400)}key=stringField(key,20,"\u8D26\u53F7");const{tag:value}=await readJson(request);const tag=stringField(value,ADMIN_TAG_MAX,"\u7BA1\u7406\u5458\u6807\u7B7E");if(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]/u.test(tag)){return text3("\u7BA1\u7406\u5458\u6807\u7B7E\u8BF7\u586B\u5199\u4E00\u884C\u53EF\u89C1\u6587\u5B57",400)}const target=await getUser(env,key);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);const account=publicAccount(env,key,target);if(account.role!=="admin")return text3("\u53EA\u53EF\u4EE5\u4E3A\u7BA1\u7406\u5458\u8BBE\u7F6E\u6807\u7B7E",400);if(tag)await env.POSTS.put(adminTagKey(key),JSON.stringify({createdAt:account.createdAt??null,tag}));else await env.POSTS.delete(adminTagKey(key));return json({ok:true,tag:tag||DEFAULT_ADMIN_TAG})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(cleanUsername(targetUsername)===user.key||cleanUsername(targetUsername)===user.username)return text3("\u4E0D\u80FD\u5220\u9664\u81EA\u5DF1\u5F53\u524D\u767B\u5F55\u7684\u8D26\u53F7",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);await deleteUser(env,targetUsername);return json({ok:true})}if(request.method==="GET"&&pathname==="/new"){if(!user)return redirect("/login");return html(editPage(null,true,user))}m=pathname.match(/^\/posts\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);const comments=await getComments(env,post.slug);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const article=parseArticle(post.content||"");const names=new Set(article.names);for(const comment of visibleComments){for(const match of plainMentions(comment.content||""))names.add(match[1])}const[accounts,mentions]=await Promise.all([getPublicAuthors(env,[post.authorUsername,...visibleComments.map(comment=>comment.authorUsername)]),getPublicAuthors(env,[...names].slice(0,100),false)]);return html(postPage(post,user,comments,accounts,article,mentions))}m=pathname.match(/^\/edit\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);if(!user)return redirect("/login");if(!canEditPost(user,post))return text3("\u6CA1\u6709\u6743\u9650",403);const article=parseArticle(post.content||"",true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(editPage(post,false,user,article,mentions))}if(request.method==="GET"&&pathname==="/api/debug/admin-check"){const testUsername=url.searchParams.get("username")||"";const raw=env.ADMIN_USERNAMES||"";const parsed=raw.split(",").map(s=>cleanUsername(s)).filter(Boolean);return json({adminUsernamesConfigured:!!raw,rawLength:raw.length,parsedCount:parsed.length,testUsername,normalizedTestUsername:cleanUsername(testUsername),wouldBeAdmin:testUsername?isAdminUsername(env,testUsername):null})}if(request.method==="POST"&&pathname==="/api/auth/register"){await enforceRate(request,env,"register",4);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)){return text3("\u7528\u6237\u540D 2-20 \u4F4D\uFF0C\u53EA\u80FD\u662F\u4E2D\u82F1\u6587/\u6570\u5B57/\u4E0B\u5212\u7EBF",400)}if(password.length<6)return text3("\u5BC6\u7801\u81F3\u5C11 6 \u4F4D",400);const existing=await getUser(env,username);if(existing)return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const salt=randomSaltHex();const passwordHash=await hashPassword(password,salt);const record={username,passwordHash,salt,role:isAdminUsername(env,username)?"admin":"user",createdAt:new Date().toISOString()};if(!await saveUser(env,record,username,true))return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/login"){await enforceRate(request,env,"login",10);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);const record=await getUser(env,username);if(!record)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);const ok=await verifyPassword(password,record.salt,record.passwordHash);if(!ok)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);if(isAdminUsername(env,record.username)&&record.role!=="admin"){record.role="admin";await saveUser(env,record,username)}const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/logout"){const token=parseCookies(request).session;if(token)await env.POSTS.delete(`session:${token}`);return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":clearSessionCookieHeader()}})}if(request.method==="POST"&&pathname==="/api/preview"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"preview",160,user);const body=await readJson(request,MAX_POST_REQUEST);const article=parseArticle(stringField(body.content,MAX_CONTENT,"\u6B63\u6587",false),true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(renderArticle(article,void 0,name=>mentionLink(name,mentions)))}if(request.method==="POST"&&pathname==="/api/posts"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"post",8,user);const fields=validatePost({description:"",content:"",tags:[],pubDate:new Date().toISOString().slice(0,10),...await readJson(request,MAX_POST_REQUEST)});const recipients=await mentionRecipients(env,articleMentionNames(fields.content));const base2=Array.from(slugify(fields.title)).slice(0,100).join("").replace(/-+$/,"");for(let attempt=0;attempt<2;attempt++){const slug=attempt||await getPost(env,base2)?base2+"-"+crypto.randomUUID().slice(0,8):base2;const data={...fields,slug,authorUsername:user.username};if(await savePost(env,slug,data,true)){return json({slug,...await sendMentionNotices(env,user,recipients,data)})}}return text3("\u6682\u65F6\u65E0\u6CD5\u5206\u914D\u6587\u7AE0\u94FE\u63A5\uFF0C\u8BF7\u91CD\u8BD5\u3002",409)}m=pathname.match(/^\/api\/posts\/([^/]+)$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await enforceRate(request,env,"edit",16,user);const body=await readJson(request,MAX_POST_REQUEST);const data={...existing,...validatePost({...existing,...body})};const recipients=existing.content===data.content?new Map:await mentionRecipients(env,articleMentionNames(data.content),articleMentionNames(existing.content));if(!await savePost(env,slug,data))return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);return json({slug,...await sendMentionNotices(env,user,recipients,data)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/delete$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await deletePost(env,slug);return json({ok:true})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const post=await getPost(env,slug);if(!post)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);const body=await readJson(request);await enforceRate(request,env,"comment",6,user);const content=stringField(body.content,1500,"\u8BC4\u8BBA");if(!content)return text3("\u8BC4\u8BBA\u4E0D\u80FD\u4E3A\u7A7A",400);const recipients=await mentionRecipients(env,[...plainMentions(content)].map(match=>match[1]));const comment={id:crypto.randomUUID(),authorUsername:user.username,content,createdAt:new Date().toISOString()};await addComment(env,slug,comment);return json({ok:true,...await sendMentionNotices(env,user,recipients,post,comment.id)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const commentId=decodeURIComponent(m[2]);const ok=await deleteComment(env,slug,commentId,user);if(!ok)return text3("\u6CA1\u6709\u6743\u9650\u6216\u8BC4\u8BBA\u4E0D\u5B58\u5728",403);return json({ok:true})}return html(notFoundPage(user),404)}catch(err){if(err instanceof RequestError)return text3(err.message,err.status);if(err instanceof URIError)return text3("\u94FE\u63A5\u683C\u5F0F\u4E0D\u6B63\u786E\u3002",400);console.error(err);return text3("\u670D\u52A1\u5668\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u8BF7\u6C42\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",500)}}};function redirect(location){return new Response(null,{status:302,headers:{Location:location}})}function html(body,status=200){return new Response(body,{status,headers:{"Content-Type":"text/html; charset=UTF-8","Cache-Control":"private, no-store"}})}function json(obj,status=200){return new Response(JSON.stringify(obj),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}function text3(str,status=200){return new Response(str,{status,headers:{"Content-Type":"text/plain; charset=UTF-8"}})}export{worker_default as default};
+      ORDER BY date DESC, slug LIMIT ? OFFSET ?`).bind(...params,PAGE_SIZE,(page2-1)*PAGE_SIZE).all();return{posts:results.map(row=>normalizePost(JSON.parse(row.data),row.slug)).filter(Boolean),q,page:page2,totalPages:totalPages2,total:total2}}const slugs=await getIndex(env);const posts=(await Promise.all(slugs.map(slug=>getPost(env,slug)))).filter(Boolean).filter(post=>author===null||post.authorUsername===author).filter(post=>!terms.length||terms.some(term=>searchableText(post).includes(term))).sort((a,b)=>b.pubDate.localeCompare(a.pubDate));const total=posts.length,totalPages=Math.max(1,Math.ceil(total/PAGE_SIZE));const page=Math.min(Math.max(1,requestedPage),totalPages);return{posts:posts.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE),q,page,totalPages,total}}async function getPost(env,slug){if(env.BLOG_DB){const row=await env.BLOG_DB.prepare("SELECT data FROM blog_posts WHERE slug=?").bind(slug).first();return row?normalizePost(JSON.parse(row.data),slug):null}return normalizePost(await env.POSTS.get(`post:${slug}`,"json"),slug)}async function savePost(env,slug,data,create=false){if(env.BLOG_DB){const db=env.BLOG_DB;const serialized=JSON.stringify(data);const searchable=searchableText(data);const encoder=new TextEncoder;if(encoder.encode(serialized).byteLength+encoder.encode(searchable).byteLength>195e4){throw new RequestError("\u6587\u7AE0\u592A\u5927\u3002\u5EFA\u8BAE\u628A\u5927\u56FE\u6539\u7528\u56FE\u7247\u94FE\u63A5\u3002",413)}const result=create?await db.prepare("INSERT INTO blog_posts (data,date,search_text,slug) VALUES (?,?,?,?) ON CONFLICT(slug) DO NOTHING").bind(serialized,data.pubDate,searchable,slug).run():await db.prepare("UPDATE blog_posts SET data=?, date=?, search_text=? WHERE slug=?").bind(serialized,data.pubDate,searchable,slug).run();return result.meta.changes>0}await env.POSTS.put(`post:${slug}`,JSON.stringify(data));await addToIndex(env,slug);return true}async function deletePost(env,slug){if(env.BLOG_DB){await env.BLOG_DB.prepare("DELETE FROM blog_posts WHERE slug=?").bind(slug).run();return}await env.POSTS.delete(`post:${slug}`);await removeFromIndex(env,slug);await env.POSTS.delete(`comments:${slug}`)}function canEditPost(user,post){if(!user)return false;return user.role==="admin"||user.username===post.authorUsername}var worker_default={async fetch(request,env){const url=new URL(request.url);const{pathname}=url;if(pathname==="/math.css"){return new Response(style_generated_default,{headers:{"Content-Type":"text/css; charset=UTF-8","Cache-Control":"public, max-age=86400"}})}if(pathname==="/style.css"||pathname==="/pcb-chip-loop.mp4"||pathname==="/pcb-chip-poster.webp"){return env.ASSETS.fetch(request)}try{if(request.method==="POST"&&env.BLOG_READ_ONLY==="1"&&pathname!=="/api/preview"){return text3("\u7F51\u7AD9\u6682\u65F6\u5904\u4E8E\u53EA\u8BFB\u72B6\u6001\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",503)}const origin=request.headers.get("Origin");if(request.method==="POST"&&(origin&&origin!==url.origin||request.headers.get("Sec-Fetch-Site")==="cross-site")){return text3("\u8BF7\u6C42\u6765\u6E90\u4E0D\u7B26\u3002",403)}const user=await getSessionUser(request,env);if(request.method==="GET"&&pathname==="/api/mentions/users"){if(!user)return json({error:"\u8BF7\u5148\u767B\u5F55"},401);const query=url.searchParams.get("q")||"";if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{0,20}$/.test(query))return json({usernames:[]});await enforceRate(request,env,"mention-search",90,user);return json({usernames:await findMentionUsernames(env,query)})}if(request.method==="GET"&&pathname==="/api/notifications/unread"){if(!user)return json({error:"\u8BF7\u5148\u767B\u5F55"},401);const{unread,more}=await readInbox(env,user);return json({unread,more})}if(request.method==="GET"&&pathname==="/notifications"){if(!user)return redirect("/login");return html(notificationsPage(user,await readInbox(env,user)))}if(request.method==="POST"&&pathname==="/notifications/read"){if(!user)return redirect("/login");const through=Number(url.searchParams.get("through"));if(!Number.isSafeInteger(through)||through<=0||through>Date.now()){return text3("\u901A\u77E5\u65F6\u95F4\u65E0\u6548\u3002",400)}await markInboxRead(env,user,through);if(request.headers.get("Accept")==="application/json"){const{unread,more}=await readInbox(env,user,through);return json({unread,more})}return redirect("/notifications")}if(request.method==="GET"&&(pathname==="/problems"||pathname==="/problems/")){return html(problemIndexPage(user))}const problemMatch=/^\/problems\/([^/]+)\/?$/.exec(pathname);if(request.method==="GET"&&problemMatch){const id=decodeURIComponent(problemMatch[1]).toUpperCase();const problem=problems.find(entry=>entry.id===id);return problem?html(problemPage(problem,user)):html(notFoundPage(user),404)}if(request.method==="GET"&&(pathname==="/"||pathname==="/articles"||pathname==="/articles/")){const archive=pathname!=="/";const owner=cleanUsername(env.BLOG_OWNER_USERNAME)||DEFAULT_OWNER_USERNAME;const q=(url.searchParams.get("q")||"").trim().slice(0,120);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const page=await getPostPage(env,q,requestedPage,archive?null:owner);const accounts=await getPublicAuthors(env,page.posts.map(post=>post.authorUsername));return html(homePage(page.posts,page,user,accounts,archive))}const profileMatch=pathname.match(/^\/users\/([^/]+)\/?$/);if(request.method==="GET"&&profileMatch){let username;try{username=decodeURIComponent(profileMatch[1])}catch{return html(notFoundPage(user),404)}if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username))return html(notFoundPage(user),404);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const[accounts,page]=await Promise.all([getPublicAuthors(env,[username]),getPostPage(env,"",requestedPage,username)]);if(!accounts.has(username)&&!page.total)return html(notFoundPage(user),404);return html(userProfilePage(username,page,accounts,user))}if(request.method==="GET"&&pathname==="/login"){if(user)return redirect("/");return html(loginPage())}if(request.method==="GET"&&pathname==="/admin/users"){if(!user)return redirect("/login");if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const q=(url.searchParams.get("q")||"").slice(0,120);const allUsers=await listUsers(env);const filtered=q.trim()?searchUsers(allUsers,q):allUsers;return html(await adminUsersPage(filtered,q,user,env))}let m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(isAdminUsername(env,targetUsername)){return text3("\u8FD9\u4E2A\u8D26\u53F7\u662F\u73AF\u5883\u53D8\u91CF\u91CC\u914D\u7F6E\u7684\u6839\u7BA1\u7406\u5458\uFF0C\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403)}const body=await readJson(request);if(body.role!=="admin"&&body.role!=="user")return text3("\u89D2\u8272\u53C2\u6570\u4E0D\u5BF9",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);if(isAdminUsername(env,target.username))return text3("\u6839\u7BA1\u7406\u5458\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403);target.role=body.role;await saveUser(env,target,cleanUsername(targetUsername));return json({ok:true})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/tag$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!user.isRootAdmin)return text3("\u53EA\u6709\u6839\u7BA1\u7406\u5458\u53EF\u4EE5\u4FEE\u6539\u7BA1\u7406\u5458\u6807\u7B7E",403);let key;try{key=decodeURIComponent(m[1])}catch{return text3("\u8D26\u53F7\u53C2\u6570\u4E0D\u5BF9",400)}key=stringField(key,20,"\u8D26\u53F7");const{tag:value}=await readJson(request);const tag=stringField(value,ADMIN_TAG_MAX,"\u7BA1\u7406\u5458\u6807\u7B7E");if(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]/u.test(tag)){return text3("\u7BA1\u7406\u5458\u6807\u7B7E\u8BF7\u586B\u5199\u4E00\u884C\u53EF\u89C1\u6587\u5B57",400)}const target=await getUser(env,key);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);const account=publicAccount(env,key,target);if(account.role!=="admin")return text3("\u53EA\u53EF\u4EE5\u4E3A\u7BA1\u7406\u5458\u8BBE\u7F6E\u6807\u7B7E",400);if(tag)await env.POSTS.put(adminTagKey(key),JSON.stringify({createdAt:account.createdAt??null,tag}));else await env.POSTS.delete(adminTagKey(key));return json({ok:true,tag:tag||DEFAULT_ADMIN_TAG})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(cleanUsername(targetUsername)===user.key||cleanUsername(targetUsername)===user.username)return text3("\u4E0D\u80FD\u5220\u9664\u81EA\u5DF1\u5F53\u524D\u767B\u5F55\u7684\u8D26\u53F7",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);await deleteUser(env,targetUsername);return json({ok:true})}if(request.method==="GET"&&pathname==="/new"){if(!user)return redirect("/login");return html(editPage(null,true,user))}m=pathname.match(/^\/posts\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);const comments=await getComments(env,post.slug);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const article=parseArticle(post.content||"");const names=new Set(article.names);for(const comment of visibleComments){for(const match of plainMentions(comment.content||""))names.add(match[1])}const[accounts,mentions]=await Promise.all([getPublicAuthors(env,[post.authorUsername,...visibleComments.map(comment=>comment.authorUsername)]),getPublicAuthors(env,[...names].slice(0,100),false)]);return html(postPage(post,user,comments,accounts,article,mentions))}m=pathname.match(/^\/edit\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);if(!user)return redirect("/login");if(!canEditPost(user,post))return text3("\u6CA1\u6709\u6743\u9650",403);const article=parseArticle(post.content||"",true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(editPage(post,false,user,article,mentions))}if(request.method==="GET"&&pathname==="/api/debug/admin-check"){const testUsername=url.searchParams.get("username")||"";const raw=env.ADMIN_USERNAMES||"";const parsed=raw.split(",").map(s=>cleanUsername(s)).filter(Boolean);return json({adminUsernamesConfigured:!!raw,rawLength:raw.length,parsedCount:parsed.length,testUsername,normalizedTestUsername:cleanUsername(testUsername),wouldBeAdmin:testUsername?isAdminUsername(env,testUsername):null})}if(request.method==="POST"&&pathname==="/api/auth/register"){await enforceRate(request,env,"register",4);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)){return text3("\u7528\u6237\u540D 2-20 \u4F4D\uFF0C\u53EA\u80FD\u662F\u4E2D\u82F1\u6587/\u6570\u5B57/\u4E0B\u5212\u7EBF",400)}if(password.length<6)return text3("\u5BC6\u7801\u81F3\u5C11 6 \u4F4D",400);const existing=await getUser(env,username);if(existing)return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const salt=randomSaltHex();const passwordHash=await hashPassword(password,salt);const record={username,passwordHash,salt,role:isAdminUsername(env,username)?"admin":"user",createdAt:new Date().toISOString()};if(!await saveUser(env,record,username,true))return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/login"){await enforceRate(request,env,"login",10);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);const record=await getUser(env,username);if(!record)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);const ok=await verifyPassword(password,record.salt,record.passwordHash);if(!ok)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);if(isAdminUsername(env,record.username)&&record.role!=="admin"){record.role="admin";await saveUser(env,record,username)}const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/logout"){const token=parseCookies(request).session;if(token)await env.POSTS.delete(`session:${token}`);return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":clearSessionCookieHeader()}})}if(request.method==="POST"&&pathname==="/api/preview"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"preview",160,user);const body=await readJson(request,MAX_POST_REQUEST);const article=parseArticle(stringField(body.content,MAX_CONTENT,"\u6B63\u6587",false),true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(renderArticle(article,void 0,name=>mentionLink(name,mentions)))}if(request.method==="POST"&&pathname==="/api/posts"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"post",8,user);const fields=validatePost({description:"",content:"",tags:[],pubDate:new Date().toISOString().slice(0,10),...await readJson(request,MAX_POST_REQUEST)});const recipients=await mentionRecipients(env,articleMentionNames(fields.content));const base2=Array.from(slugify(fields.title)).slice(0,100).join("").replace(/-+$/,"");for(let attempt=0;attempt<2;attempt++){const slug=attempt||await getPost(env,base2)?base2+"-"+crypto.randomUUID().slice(0,8):base2;const data={...fields,slug,authorUsername:user.username};if(await savePost(env,slug,data,true)){return json({slug,...await sendMentionNotices(env,user,recipients,data)})}}return text3("\u6682\u65F6\u65E0\u6CD5\u5206\u914D\u6587\u7AE0\u94FE\u63A5\uFF0C\u8BF7\u91CD\u8BD5\u3002",409)}m=pathname.match(/^\/api\/posts\/([^/]+)$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await enforceRate(request,env,"edit",16,user);const body=await readJson(request,MAX_POST_REQUEST);const data={...existing,...validatePost({...existing,...body})};const recipients=existing.content===data.content?new Map:await mentionRecipients(env,articleMentionNames(data.content),articleMentionNames(existing.content));if(!await savePost(env,slug,data))return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);return json({slug,...await sendMentionNotices(env,user,recipients,data)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/delete$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await deletePost(env,slug);return json({ok:true})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const post=await getPost(env,slug);if(!post)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);const body=await readJson(request);await enforceRate(request,env,"comment",6,user);const content=stringField(body.content,1500,"\u8BC4\u8BBA");if(!content)return text3("\u8BC4\u8BBA\u4E0D\u80FD\u4E3A\u7A7A",400);const recipients=await mentionRecipients(env,[...plainMentions(content)].map(match=>match[1]));const comment={id:crypto.randomUUID(),authorUsername:user.username,content,createdAt:new Date().toISOString()};await addComment(env,slug,comment);return json({ok:true,...await sendMentionNotices(env,user,recipients,post,comment.id)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const commentId=decodeURIComponent(m[2]);const ok=await deleteComment(env,slug,commentId,user);if(!ok)return text3("\u6CA1\u6709\u6743\u9650\u6216\u8BC4\u8BBA\u4E0D\u5B58\u5728",403);return json({ok:true})}return html(notFoundPage(user),404)}catch(err){if(err instanceof RequestError)return text3(err.message,err.status);if(err instanceof URIError)return text3("\u94FE\u63A5\u683C\u5F0F\u4E0D\u6B63\u786E\u3002",400);console.error(err);return text3("\u670D\u52A1\u5668\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u8BF7\u6C42\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",500)}}};function redirect(location){return new Response(null,{status:302,headers:{Location:location}})}function html(body,status=200){return new Response(body,{status,headers:{"Content-Type":"text/html; charset=UTF-8","Cache-Control":"private, no-store"}})}function json(obj,status=200){return new Response(JSON.stringify(obj),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}function text3(str,status=200){return new Response(str,{status,headers:{"Content-Type":"text/plain; charset=UTF-8"}})}export{worker_default as default};
