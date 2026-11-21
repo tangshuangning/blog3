@@ -37,11 +37,7 @@ ${math3?'<link rel="stylesheet" href="/math.css?v=1" />':""}
          poster="/pcb-chip-poster.webp" data-src="/pcb-chip-loop.mp4"></video>
 </div>
 <div id="cursor-effect" aria-hidden="true" hidden><span id="cursor-dot"></span><span id="cursor-ring"></span></div>
-<header class="site-header">
-  <a href="/" class="brand">
-    <span class="brand-mark">\u25A0</span>
-    <span class="brand-text">${SITE_NAME}</span>
-  </a>
+<header class="site-header" style="justify-content:flex-end">
   <button type="button" class="mobile-menu" aria-controls="site-nav" aria-expanded="false" onclick="this.setAttribute('aria-expanded', document.getElementById('site-nav').classList.toggle('menu-open'))">\u83DC\u5355 <span aria-hidden="true">\u2630</span></button>
   <nav class="site-nav" id="site-nav" aria-label="\u7F51\u7AD9\u5BFC\u822A">
     <a href="/" ${active==="home"?'aria-current="page"':""} class="${active==="home"?"is-active":""}">\u9996\u9875</a>
