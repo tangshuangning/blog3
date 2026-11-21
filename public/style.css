@@ -324,7 +324,6 @@ a { color: var(--ink); }
   font-weight: 700;
   color: var(--gray);
   margin-bottom: 10px;
-  text-transform: uppercase;
 }
 .post-card-title {
   font-family: var(--font-display);
@@ -1483,7 +1482,7 @@ body { background: transparent; isolation: isolate; }
 }
 .site-main:has(> .archive-head) .search-input::placeholder { color: var(--night-muted); }
 
-.author-name { font-weight: 750; }
+.author-name { font-weight: 750; text-transform: none; }
 a.author-name { text-decoration: underline; text-underline-offset: .2em; }
 .post-card-link { text-decoration: none; color: inherit; }
 .post-card-link::after { content: ''; position: absolute; inset: 0; }
