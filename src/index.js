@@ -21,7 +21,7 @@ var __create=Object.create;var __defProp=Object.defineProperty;var __getOwnPropD
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${escapeHtml2(title)} \xB7 ${SITE_NAME}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='black'/%3E%3Crect x='4' y='4' width='24' height='24' fill='%23F7DC6F'/%3E%3Crect x='9' y='9' width='14' height='14' fill='black'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/style.css?v=editor-3" />
+<link rel="stylesheet" href="/style.css?v=editor-4" />
 ${math3?'<link rel="stylesheet" href="/math.css?v=1" />':""}
 </head>
 <body>
@@ -430,7 +430,7 @@ ${escapeHtml2(p.content||"")}</textarea>
       const previewStatus = document.getElementById('preview-status');
       let renderedSource = '';
       let lineStarts = [], anchors = [];
-      let measurement, mirror;
+      let measurement;
       let previewTimer, previewRequest, scrollFrame;
       let composing = false;
 
@@ -458,7 +458,6 @@ ${escapeHtml2(p.content||"")}</textarea>
             : [];
         });
         measurement = null;
-        mirror?.replaceChildren();
       }
 
       function canFollow() {
@@ -495,50 +494,63 @@ ${escapeHtml2(p.content||"")}</textarea>
         showBlock(anchor, sourceLine, false);
       }
 
-      // A hidden text node measures the textarea's wrapped lines. It never
-      // draws the editor text or intercepts input.
+      // Keep the measuring text detached between scroll events. Its inline
+      // styles hide it even if the stylesheet has not loaded yet.
       function sourceMeasurement() {
-        if (measurement?.width === textarea.clientWidth) return measurement;
-        if (!textarea.clientWidth || renderedSource.length > 300000 || typeof Range.prototype.getBoundingClientRect !== 'function') return null;
-        if (!mirror) {
-          mirror = document.createElement('div');
-          mirror.className = 'editor-measure';
-          mirror.setAttribute('aria-hidden', 'true');
-          document.body.appendChild(mirror);
-        }
+        const width = textarea.clientWidth;
+        if (measurement?.width === width) return measurement;
+        if (!width || renderedSource.length > 300000 || typeof Range.prototype.getBoundingClientRect !== 'function') return null;
+
+        const element = document.createElement('div');
+        element.setAttribute('aria-hidden', 'true');
+        element.setAttribute('inert', '');
         const css = getComputedStyle(textarea);
         for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing',
           'wordSpacing', 'direction', 'tabSize', 'whiteSpace', 'overflowWrap', 'wordBreak',
-          'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) mirror.style[prop] = css[prop];
-        mirror.style.width = textarea.clientWidth + 'px';
+          'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) element.style[prop] = css[prop];
+        for (const [property, value] of Object.entries({
+          position: 'fixed', inset: '0 auto auto -10000px', visibility: 'hidden', opacity: '0',
+          'pointer-events': 'none', 'box-sizing': 'border-box', 'user-select': 'none',
+          'writing-mode': 'horizontal-tb', width: width + 'px',
+        })) element.style.setProperty(property, value, 'important');
+
         const node = document.createTextNode(renderedSource + String.fromCharCode(8203));
-        mirror.replaceChildren(node);
-        const range = document.createRange();
-        const origin = mirror.getBoundingClientRect().top;
-        const rows = new Map();
-        measurement = { width: textarea.clientWidth, y(line) {
-          if (!rows.has(line)) {
-            range.setStart(node, lineStarts[line]);
-            range.collapse(true);
-            rows.set(line, range.getBoundingClientRect().top - origin);
-          }
-          return rows.get(line);
-        } };
+        element.appendChild(node);
+        measurement = { width, element, node, rows: new Map() };
         return measurement;
+      }
+
+      function sourceLineAt(measurement, top) {
+        const { element, node, rows } = measurement;
+        let range, origin;
+        try {
+          let low = 0, high = lineStarts.length;
+          while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (!rows.has(mid)) {
+              if (!range) {
+                document.body.appendChild(element);
+                origin = element.getBoundingClientRect().top;
+                range = document.createRange();
+              }
+              range.setStart(node, lineStarts[mid]);
+              range.collapse(true);
+              rows.set(mid, range.getBoundingClientRect().top - origin);
+            }
+            if (rows.get(mid) <= top) low = mid + 1;
+            else high = mid;
+          }
+          return Math.max(0, low - 1);
+        } finally {
+          element.remove();
+        }
       }
 
       function followScroll() {
         if (!canFollow()) return;
         const source = sourceMeasurement();
         if (!source) return;
-        const top = textarea.scrollTop + 14;
-        let low = 0, high = lineStarts.length;
-        while (low < high) {
-          const mid = Math.floor((low + high) / 2);
-          if (source.y(mid) <= top) low = mid + 1;
-          else high = mid;
-        }
-        const line = Math.max(0, low - 1);
+        const line = sourceLineAt(source, textarea.scrollTop + 14);
         const anchor = anchors[locate(anchors, line, entry => entry.line)];
         showBlock(anchor, line, true);
       }
