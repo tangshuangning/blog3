@@ -1668,3 +1668,62 @@ a.admin-gradient:hover { text-decoration: underline; }
   font-size: .85rem;
 }
 .admin-tag-note { color: var(--gray); font-size: .83rem; margin-bottom: .55rem; }
+
+.notification-bell {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-inline-end: 18px;
+  border: 1px solid var(--night-line);
+  border-radius: 6px;
+  color: var(--night-text);
+  text-decoration: none;
+}
+.notification-bell:hover, .notification-bell[aria-current="page"] {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+.notification-count {
+  position: absolute;
+  inset: -5px -7px auto auto;
+  min-width: 1.25rem;
+  padding: 0 .25rem;
+  border: 2px solid #0a1524;
+  border-radius: 999px;
+  background: #ffb098;
+  color: #302020;
+  font: 800 .72rem/1.35 var(--font-body);
+  text-align: center;
+}
+.notification-panel {
+  margin: clamp(24px, 5vw, 50px) auto;
+  padding: clamp(18px, 4vw, 36px);
+  max-width: 720px;
+  border: 2px solid var(--night-line);
+  background: var(--night-panel);
+  color: var(--night-text);
+}
+.notification-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.notification-heading h1 { margin: 0; font-size: clamp(1.55rem, 4vw, 2rem); }
+.notification-list { margin: 0; padding: 0; list-style: none; }
+.notification-item { padding: 12px; border-top: 1px solid var(--night-line); }
+.notification-item.is-unread { box-shadow: inset 3px 0 var(--neon); background: #14283c; }
+.notification-item p { margin: 0 0 5px; overflow-wrap: anywhere; }
+.notification-item a { color: var(--neon); }
+.notification-item time { color: var(--night-muted); font-size: .84rem; }
+.notification-unread { margin-inline-start: .5em; color: var(--neon); font-size: .84rem; }
+.mention-link { color: var(--link); font-weight: 750; text-decoration: underline; text-underline-offset: .16em; }
+.prose .mention-link { font-weight: 750; }
+.comment-item:target { outline: 2px solid var(--link); outline-offset: 3px; scroll-margin-top: 100px; }
+@media (max-width: 760px) {
+  .notification-bell { margin-inline-end: 0; }
+}
