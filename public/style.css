@@ -1490,22 +1490,56 @@ a.author-name { text-decoration: underline; text-underline-offset: .2em; }
 }
 a.author-name:hover { text-decoration-thickness: .13em; }
 #site-nav .nav-user.author-name { text-transform: none; }
-#site-nav .nav-user[data-tooltip]::after { -webkit-text-fill-color: var(--paper); }
-.admin-gradient { color: #075f78; }
-.site-header .admin-gradient, .profile-panel .admin-gradient { color: #8ceae7; }
+#site-nav .nav-user.admin-gradient { border-bottom: 0; }
+a.admin-gradient { text-decoration: none; }
+a.admin-gradient:hover { text-decoration: underline; text-decoration-color: #e4efff; }
+.admin-name-label {
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+  max-inline-size: 100%;
+  padding-inline: .42em;
+  color: #ffe8bf;
+  line-height: 1.3;
+}
+.admin-name-label::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: #2b3d53;
+  clip-path: polygon(.25em 0, 100% 0, calc(100% - .25em) 100%, 0 100%);
+}
+.admin-name-text { display: inline-block; padding-block: .035em .1em; }
+.admin-tag {
+  --identity-colors: #8b5008, #a4354e, #973275, #6537a1, #2556a5, #096b70,
+    #8b5008, #a4354e, #973275, #6537a1, #2556a5, #096b70, #8b5008;
+}
+.site-header .admin-tag, .profile-panel .admin-tag {
+  --identity-colors: #ffe2a0, #ffb9a7, #f9a6d5, #c6adff, #9acbff, #92efea,
+    #ffe2a0, #ffb9a7, #f9a6d5, #c6adff, #9acbff, #92efea, #ffe2a0;
+}
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  .admin-gradient {
-    --name-rainbow: #b22467, #7d38ba, #095dba, #006f63, #914b05, #b22467, #7d38ba, #095dba, #006f63, #914b05, #b22467;
-    background-image: linear-gradient(90deg, var(--name-rainbow));
-    background-size: 200% 100%;
+  .admin-name-text {
+    background-image:
+      linear-gradient(102deg, transparent 42%, #fff5 45.5%, #fffb 47.5%, #ffffff 49.2%,
+        #ffffff 50.8%, #fffb 52.5%, #fff5 54.5%, transparent 58%),
+      linear-gradient(90deg, #f780c4, #ff8e84, #f6ad65, #ebc85d, #65d2c3, #73b9f8, #c395f5,
+        #f780c4, #ff8e84, #f6ad65, #ebc85d, #65d2c3, #73b9f8, #c395f5, #f780c4);
+    background-size: 280% 100%, 200% 100%;
+    background-position: 100% 50%, 0 50%;
+    background-repeat: no-repeat;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: admin-name-flow 4.8s linear infinite;
+    animation: admin-name-sweep 5s infinite;
   }
-  .site-header .admin-gradient, .profile-panel .admin-gradient {
-    --name-rainbow: #ff8fc7, #cbadff, #8dcbff, #7ff2dc, #ffd48b, #ff8fc7, #cbadff, #8dcbff, #7ff2dc, #ffd48b, #ff8fc7;
-  }
+}
+@keyframes admin-name-sweep {
+  from { background-position: 100% 50%, 0 50%; animation-timing-function: steps(96); }
+  80% { background-position: 0 50%, 80% 50%; animation-timing-function: steps(24); }
+  to { background-position: 0 50%, 100% 50%; }
 }
 @keyframes admin-name-flow {
   from { background-position: 0% 50%; }
@@ -1516,10 +1550,12 @@ a.author-name:hover { text-decoration-thickness: .13em; }
   .profile-monogram { flex-basis: 52px; height: 52px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .admin-gradient { animation: none; }
+  .admin-name-text { animation: none; }
 }
 @media (forced-colors: active) {
-  .admin-gradient { background-image: none; -webkit-text-fill-color: currentColor; }
+  .admin-name-label { color: inherit; }
+  .admin-name-label::before { content: none; }
+  .admin-name-text { background-image: none; -webkit-text-fill-color: currentColor; }
 }
 
 
@@ -1527,18 +1563,17 @@ a.author-name:hover { text-decoration-thickness: .13em; }
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: .42em;
+  gap: .3rem .375rem;
   max-inline-size: 100%;
 }
+.profile-heading .author-identity { column-gap: .5rem; }
 .admin-tag {
   --cut-x: .82em;
   --cut-y: .58em;
   --tag-text: #4c3179;
-  --tag-rainbow: #9b235e, #6533a1, #155ba3, #036e69, #8e481e,
-    #9b235e, #6533a1, #155ba3, #036e69, #8e481e, #9b235e;
-  --tag-edge: linear-gradient(100deg, #f05ca1, #a57cfd, #5fbeff, #5edbc3, #f6b863,
-    #f05ca1, #a57cfd, #5fbeff, #5edbc3, #f6b863, #f05ca1);
-  --tag-glass: #f0f7faf5;
+  --tag-edge: linear-gradient(90deg, #ffd184, #fa978b, #ef83bc, #b392f4, #74b7f4, #63dace,
+    #ffd184, #fa978b, #ef83bc, #b392f4, #74b7f4, #63dace, #ffd184);
+  --tag-glass: #f0f7fa;
   --tag-light: #ffffed9c;
   --tag-tint: #c7b4ef4a;
   --tag-grain: #fff3;
@@ -1554,7 +1589,7 @@ a.author-name:hover { text-decoration-thickness: .13em; }
   text-transform: none;
   letter-spacing: .015em;
   overflow-wrap: anywhere;
-  filter: drop-shadow(0 1px 0 #192f51be) drop-shadow(0 3px 2px #111d4159);
+  filter: drop-shadow(0 2px 2px #111d4173);
 }
 .admin-tag::before, .admin-tag::after {
   content: '';
@@ -1574,7 +1609,7 @@ a.author-name:hover { text-decoration-thickness: .13em; }
       #21417544 129deg 181deg, #25296560 181deg 276deg, #64377911 276deg 316deg, #ffec 316deg 360deg),
     var(--tag-edge);
   background-size: 100% 100%, 100% 100%, 100% 100%, 200% 100%;
-  animation: admin-tag-edge-flow 6s linear infinite;
+  animation: admin-tag-edge-flow 6s steps(120) infinite;
 }
 .admin-tag::after {
   z-index: -1;
@@ -1586,14 +1621,10 @@ a.author-name:hover { text-decoration-thickness: .13em; }
     repeating-linear-gradient(130deg, var(--tag-grain) 0 .45px, transparent .45px 2.2px),
     linear-gradient(145deg, transparent 28%, var(--tag-tint)),
     var(--tag-glass);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
-  backdrop-filter: blur(8px) saturate(115%);
 }
 .site-header .admin-tag, .profile-panel .admin-tag {
   --tag-text: #c9ecff;
-  --tag-rainbow: #ffbde0, #dfcaff, #c4e6ff, #a2fff0, #ffe4ad,
-    #ffbde0, #dfcaff, #c4e6ff, #a2fff0, #ffe4ad, #ffbde0;
-  --tag-glass: #192e49f2;
+  --tag-glass: #192e49;
   --tag-light: #b0deff30;
   --tag-tint: #4c577d64;
   --tag-grain: #d7e6ff0a;
@@ -1604,12 +1635,12 @@ a.author-name:hover { text-decoration-thickness: .13em; }
 }
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .admin-tag-text {
-    background-image: linear-gradient(90deg, var(--tag-rainbow));
+    background-image: linear-gradient(90deg, var(--identity-colors));
     background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: admin-name-flow 6s linear infinite;
+    animation: admin-name-flow 6s steps(120) infinite;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1620,8 +1651,7 @@ a.author-name:hover { text-decoration-thickness: .13em; }
   .admin-tag::before, .admin-tag::after { content: none; }
   .admin-tag-text { background-image: none; -webkit-text-fill-color: currentColor; }
 }
-.profile-heading .admin-tag { font-size: .81rem; }
-.nav-identity { gap: .45rem; }
+.profile-heading .admin-tag { font-size: .95rem; }
 .admin-tag-form {
   display: inline-flex;
   align-items: center;
