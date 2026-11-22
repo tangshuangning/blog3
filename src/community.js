@@ -49,6 +49,21 @@ const inboxSchema = [
   'CREATE INDEX IF NOT EXISTS messages_recipient ON messages(recipient, sender, id)',
 ];
 
+const NOTICE_LIMIT = 50;
+const NOTICE_LIFETIME = 30 * 86400 * 1000;
+const NOTICE_CLOCK = 9999999999999;
+const noticesSchema = [
+  `CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, at INTEGER NOT NULL, data TEXT NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS notices_at ON notices(at DESC, id DESC)',
+];
+
+export function validInboxNotice(notice) {
+  if (!notice || typeof notice.actor !== 'string' || typeof notice.title !== 'string' ||
+      !Number.isSafeInteger(notice.at) || notice.at <= 0 || notice.at > NOTICE_CLOCK) return false;
+  return Number.isSafeInteger(notice.activityId) && notice.activityId > 0 ||
+    typeof notice.slug === 'string' && notice.slug.length > 0;
+}
+
 const recordsSchema = [
   `CREATE TABLE IF NOT EXISTS records (
     rid TEXT PRIMARY KEY, problem TEXT NOT NULL, owner TEXT NOT NULL, account_date TEXT NOT NULL,
@@ -134,6 +149,10 @@ export class CommunityStore {
         this.initialize(inboxSchema);
         return Response.json(this.messages(action, args));
       }
+      if (area === 'notices') {
+        this.initialize(noticesSchema);
+        return Response.json(await this.notices(action, args));
+      }
       this.initialize(schema);
       return Response.json(this.community(action, args));
     } catch (error) {
@@ -156,6 +175,80 @@ export class CommunityStore {
 
   row(query, ...params) {
     return this.rows(query, ...params)[0];
+  }
+
+  saveNotice(id, notice) {
+    if (!validInboxNotice(notice)) return;
+    this.sql.exec('INSERT OR IGNORE INTO notices (id, at, data) VALUES (?, ?, ?)',
+      id, notice.at, JSON.stringify(notice));
+  }
+
+  advanceNoticeRead(through) {
+    const kv = this.ctx.storage.kv;
+    if (Number.isSafeInteger(through) && through > (kv.get('notice-read-through') || 0)) {
+      kv.put('notice-read-through', through);
+    }
+  }
+
+  async restoreNotices(account) {
+    const kv = this.ctx.storage.kv;
+    const state = kv.get('notice-import');
+    if (state?.done || (state?.next && Date.now() < state.next)) return Boolean(state?.unavailable);
+    if (this.noticeImport) return this.noticeImport;
+    this.noticeImport = this.restoreNoticePage(account, state);
+    try { return await this.noticeImport; }
+    finally { this.noticeImport = null; }
+  }
+
+  async restoreNoticePage(account, state) {
+    const kv = this.ctx.storage.kv;
+    const prefix = 'mention:' + account;
+    const readPrefix = 'mention-read:' + account;
+    try {
+      const [notices, read] = await Promise.all([
+        this.env.POSTS.list({ prefix, limit: NOTICE_LIMIT + 1 }),
+        this.env.POSTS.list({ prefix: readPrefix, limit: 1 }),
+      ]);
+      const watermark = read.keys[0]?.name.slice(readPrefix.length, readPrefix.length + 13);
+      this.ctx.storage.transactionSync(() => {
+        for (const { name, metadata } of notices.keys) {
+          this.saveNotice(name.slice(prefix.length), metadata);
+        }
+        if (/^\d{13}$/.test(watermark ?? '')) this.advanceNoticeRead(NOTICE_CLOCK - Number(watermark));
+        // Verify once more after KV has had time to expose writes from the previous deployment.
+        kv.put('notice-import', state?.copied ? { done: true } : { copied: true, next: Date.now() + 120000 });
+      });
+      return false;
+    } catch (error) {
+      console.warn('Legacy notification sync failed:', error?.message);
+      kv.put('notice-import', { copied: Boolean(state?.copied), unavailable: true, next: Date.now() + 300000 });
+      return true;
+    }
+  }
+
+  async notices(action, args) {
+    const cutoff = Date.now() - NOTICE_LIFETIME;
+    if (action === 'save') {
+      this.ctx.storage.transactionSync(() => {
+        this.sql.exec('DELETE FROM notices WHERE at < ?', cutoff);
+        this.saveNotice(args.id, args.notice);
+      });
+      return {};
+    }
+    if (action === 'mark') {
+      this.advanceNoticeRead(args.through);
+      return {};
+    }
+    if (action !== 'read') throw new CommunityError('操作不存在。', 404);
+    const legacyUnavailable = await this.restoreNotices(args.account);
+    const readThrough = Math.max(this.ctx.storage.kv.get('notice-read-through') || 0, args.through || 0);
+    const notices = this.rows('SELECT data FROM notices WHERE at >= ? ORDER BY at DESC, id DESC LIMIT ?',
+      cutoff, NOTICE_LIMIT + 1).map(row => JSON.parse(row.data));
+    const unread = notices.filter(notice => notice.at > readThrough).length;
+    return {
+      entries: notices.slice(0, NOTICE_LIMIT), readThrough,
+      unread: Math.min(unread, NOTICE_LIMIT), more: unread > NOTICE_LIMIT, legacyUnavailable,
+    };
   }
 
   community(action, args) {
@@ -378,16 +471,20 @@ export class CommunityStore {
   }
 }
 
-async function callStore(env, area, action, args) {
+async function callStore(env, area, action, args, objectName = area) {
   const binding = env.COMMUNITY_STORE;
   if (!binding) throw new CommunityError('社区功能正在发布，请稍后再试。', 503);
-  const stub = binding.get(binding.idFromName(area));
+  const stub = binding.get(binding.idFromName(objectName));
   const response = await stub.fetch('https://community.internal/' + area + '/' + action, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args),
   });
   const result = await response.json();
   if (!response.ok) throw new CommunityError(result.error || '暂时无法完成此操作。', response.status);
   return result;
+}
+
+export function callNotificationStore(env, account, action, args) {
+  return callStore(env, 'notices', action, { ...args, account }, 'notices:' + account);
 }
 
 export async function saveCommunityRecord(env, user, problem, receipt, result = {}) {
