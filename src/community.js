@@ -444,14 +444,15 @@ function actionForm(url, text, enabled) {
 
 function writeForm(url, text, label, length, markdown = false) {
   if (markdown) {
-    return `<form method="post" action="${htmlEscape(url)}" class="community-compose community-markdown-compose">
+    return `<form id="benben-composer" method="post" action="${htmlEscape(url)}" class="community-compose community-markdown-compose benben-composer">
       <label for="content-input">${label}（Markdown）</label>
       ${markdownToolbar}
       <textarea id="content-input" name="body" data-mention-picker required maxlength="${length}" rows="5"
         wrap="soft" placeholder="支持公式、表格、代码块和 @用户名"></textarea>
       ${markdownDialogs}
       <button type="submit" class="community-button">${text}</button>
-    </form><script>${markdownToolbarScript}</script>`;
+      <p class="benben-quote-status" role="status" hidden></p>
+    </form><script>${markdownToolbarScript}</script><script>${benbenQuoteScript}</script>`;
   }
   return `<form method="post" action="${htmlEscape(url)}" class="community-compose">
     <label>${label}<textarea name="body" required maxlength="${length}" rows="3"></textarea></label>
@@ -485,22 +486,30 @@ function postByline(row, accounts, tools) {
   return `<div class="community-byline">${tools.authorName(row.name, accounts)}${date(row.at)}</div>`;
 }
 
+function quoteButton(name, sourceUrl = '') {
+  return `<button type="button" class="community-button community-button-quiet benben-reply-button"
+    data-quote-author="${htmlEscape(name)}"${sourceUrl ? ` data-quote-url="${htmlEscape(sourceUrl)}"` : ''}
+    aria-controls="content-input">回复</button>`;
+}
+
 function feedCard(row, accounts, tools, actor, markdown, individual = false) {
   const path = activityPath(row.id);
   const returnTo = individual ? '?thread=1' : '';
-  return `<article class="community-card">
+  return `<article class="community-card benben-card" data-benben-quote>
     ${postByline(row, accounts, tools)}
     ${row.body === null ? `<p><a href="${path}">查看动态全文</a></p>` : `<div class="community-markdown prose">${markdown(row)}</div>`}
     <div class="community-actions">
-      ${individual ? '' : `<a href="${path}">回复 <span>${row.replies}</span></a>`}
+      ${actor ? quoteButton(row.name, row.body === null ? path : '') : ''}
+      ${individual ? '' : `<a href="${path}">${row.replies ? row.replies + ' 条回复' : '详情'}</a>`}
       ${actor ? actionForm(path + '/like' + returnTo, (row.liked ? '已赞 ' : '赞 ') + row.likes, !row.liked) : `<span>${row.likes} 赞</span>`}
       ${canEdit(actor, row) ? actionForm(path + '/delete', '删除') : ''}
     </div>
   </article>`;
 }
 
-function communityPage(tools, user, title, active, body, aside = '', markdown = false) {
+function communityPage(tools, user, title, active, body, aside = '', markdown = false, intro = '') {
   return tools.html(tools.layout({ user, title, active, community: true, math: markdown, mentionPicker: markdown && Boolean(user), body: `
+    ${intro}
     <div class="community-layout${aside ? ' has-aside' : ''}">
       <div class="community-main">${body}</div>${aside ? `<aside class="community-sidebar">${aside}</aside>` : ''}
     </div>` }));
@@ -514,6 +523,23 @@ function loginLine(action) {
   return `<div class="community-card community-empty"><a href="/login">登录</a>后可以${action}。</div>`;
 }
 
+function homeIntro() {
+  return `<section class="community-home-intro" aria-labelledby="community-home-title">
+    <div class="community-home-copy">
+      <h1 id="community-home-title">野蛮生长</h1>
+      <p>算法题解、竞赛笔记与日常动态。</p>
+      <nav class="community-home-links" aria-label="首页常用入口">
+        <a href="/problems">浏览题库</a>
+        <a href="/discuss">进入讨论区</a>
+      </nav>
+    </div>
+    <div class="community-home-shortcuts">
+      <a href="/problems/P1001"><span>P1001</span><strong>A+B Problem</strong><span aria-hidden="true">↗</span></a>
+      <a href="/discuss?board=announcements"><strong>站务公告</strong><span aria-hidden="true">↗</span></a>
+    </div>
+  </section>`;
+}
+
 async function renderFeed(env, user, actor, url, page, tools) {
   const following = Boolean(actor && url.searchParams.get('view') === 'following');
   const data = await callStore(env, 'social', 'feed', { actor, following, page });
@@ -523,23 +549,23 @@ async function renderFeed(env, user, actor, url, page, tools) {
     ${selected(!following, '/', '全站动态')}${actor ? selected(following, '/?view=following', '我关注的') : ''}
   </nav>`;
   const aside = `<div class="community-card community-sidebar-card">
-    <h2>社区</h2>
-    ${[ ['/discuss', '讨论区'], ['/members', '找用户'], ['/problems', '题库'], ['/articles', '全部文章'],
+    <h2>常用入口</h2>
+    ${[ ['/members', '找用户'], ['/articles', '全部文章'],
       ...(user ? [['/my/articles', '我的文章'], ['/messages', '私信']] : [])].map(([href, text]) => selected(false, href, text)).join('')}
   </div>`;
   const empty = following ? '还没有关注用户的动态。' : '还没有犇犇，来发第一条动态吧。';
   return communityPage(tools, user, '犇犇', 'home', [
-    heading('犇犇'), tabs, mentionStatus(url),
-    actor ? `<section class="community-card">${writeForm('/benben', '发布犇犇', '说点什么', MAX_ACTIVITY_BODY, true)}</section>` : loginLine('发布犇犇'),
+    `<header class="benben-heading"><h2>犇犇</h2>${tabs}</header>`, mentionStatus(url),
+    actor ? `<section class="community-card benben-card">${writeForm('/benben', '发布犇犇', '说点什么', MAX_ACTIVITY_BODY, true)}</section>` : loginLine('发布犇犇'),
     data.rows.length ? data.rows.map(row => feedCard(row, accounts, tools, actor, markdown)).join('') : `<div class="community-card community-empty">${empty}</div>`,
     pageLinks(path, page, data.more),
-  ].join(''), aside, true);
+  ].join(''), aside, true, homeIntro());
 }
 
-function renderReplies(rows, accounts, tools, markdown) {
+function renderReplies(rows, accounts, tools, markdown, actor) {
   if (!rows.length) return '<p class="community-empty">还没有回复。</p>';
-  return rows.map(row => `<article class="community-reply"${markdown ? ` id="reply-${row.id}"` : ''}>${postByline(row, accounts, tools)}
-    ${markdown ? `<div class="community-markdown prose">${markdown(row)}</div>` : `<p class="community-text">${htmlEscape(row.body)}</p>`}</article>`).join('');
+  return rows.map(row => `<article class="community-reply"${markdown ? ` id="reply-${row.id}" data-benben-quote` : ''}>${postByline(row, accounts, tools)}
+    ${markdown ? `<div class="community-markdown prose">${markdown(row)}</div>${actor ? quoteButton(row.name) : ''}` : `<p class="community-text">${htmlEscape(row.body)}</p>`}</article>`).join('');
 }
 
 function mentionStatus(url) {
@@ -555,7 +581,7 @@ async function renderActivity(env, user, actor, id, url, page, tools) {
   return communityPage(tools, user, '犇犇详情', 'home', [
     heading('犇犇详情', '<a href="/">返回全站动态</a>'), mentionStatus(url),
     feedCard(data.activity, accounts, tools, actor, markdown, true),
-    `<section class="community-card"><h2>回复</h2>${renderReplies(data.rows, accounts, tools, markdown)}
+    `<section class="community-card benben-card"><h2>回复</h2>${renderReplies(data.rows, accounts, tools, markdown, actor)}
       ${pageLinks(activityPath(id), data.page, data.more)}
       ${actor ? writeForm(activityPath(id) + '/reply', '回复', '写回复', MAX_ACTIVITY_BODY, true) : loginLine('回复')}</section>`,
   ].join(''), '', true);
@@ -878,6 +904,68 @@ export async function communityRoute(request, env, user, tools) {
   }
 }
 
+const benbenQuoteScript = String.raw`(() => {
+  const composer = document.getElementById('benben-composer');
+  const field = composer.elements.body;
+  const status = composer.querySelector('.benben-quote-status');
+  let request;
+
+  function report(message) {
+    status.textContent = message;
+    status.hidden = !message;
+  }
+
+  async function quoteSource(button, signal) {
+    if (!button.dataset.quoteUrl) {
+      return button.closest('[data-benben-quote]')?.querySelector('.community-markdown');
+    }
+    const response = await fetch(button.dataset.quoteUrl, { signal });
+    if (!response.ok) throw new Error('Quote source is unavailable');
+    const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+    return page.querySelector('[data-benben-quote] .community-markdown');
+  }
+
+  function quoteText(source) {
+    if (!source) throw new Error('Quote text is unavailable');
+    const copy = source.cloneNode(true);
+    copy.querySelectorAll('.code-bar, .code-gutter, .katex-html, annotation').forEach(node => node.remove());
+    for (const image of copy.querySelectorAll('img')) image.replaceWith(image.alt || '图片');
+    for (const lineBreak of copy.querySelectorAll('br')) lineBreak.replaceWith(' ');
+    for (const block of copy.querySelectorAll('p, li, blockquote, pre, h1, h2, h3, h4, th, td')) block.append(' ');
+    return copy.textContent.replace(/\s+/g, ' ').trim() || '查看原动态';
+  }
+
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-quote-author]');
+    if (!button) return;
+    request?.abort();
+    const controller = new AbortController();
+    request = controller;
+    report('');
+    try {
+      const excerpt = quoteText(await quoteSource(button, controller.signal));
+      if (controller.signal.aborted) return;
+      const draft = field.value;
+      const quote = '|| @' + button.dataset.quoteAuthor + ' : ' + excerpt;
+      if (!draft.endsWith(quote)) {
+        const addition = (draft.trim() ? '\n\n' : ' ') + quote;
+        if (draft.length + addition.length > field.maxLength) {
+          report('输入框剩余空间不足，无法加入这段引用。');
+        } else {
+          field.setRangeText(addition, draft.length, draft.length, 'start');
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      composer.scrollIntoView({ block: 'center' });
+      field.focus({ preventScroll: true });
+    } catch {
+      if (controller.signal.aborted) return;
+      report('暂时无法加载引用，请重试。');
+      composer.scrollIntoView({ block: 'center' });
+    }
+  });
+})();`;
+
 export const communityCss = `
 .community-layout{max-width:960px;margin:38px auto 76px;display:grid;gap:22px;color:var(--night-text)}
 .community-layout.has-aside{grid-template-columns:minmax(0,1fr) 220px}
@@ -973,9 +1061,55 @@ export const communityCss = `
 .community-record-stats dd{margin:2px 0 0;font-weight:700}
 .community-code{max-width:100%;overflow:auto;margin:0;padding:13px;border-radius:7px;background:#141d27;color:#edf5ff}
 .community-profile{margin-top:12px;color:var(--night-text)}
+.community-home-intro{
+  max-width:960px;margin:32px auto 0;display:grid;grid-template-columns:minmax(0,1fr) 215px;align-items:center;gap:20px;
+  padding:23px 24px;border:1px solid #527689;border-radius:14px;color:var(--night-text);
+  background:linear-gradient(103deg,#101d2e 24%,#111f31e8 58%,#132433d9),url('/pcb-chip-poster.webp') 72% 42%/cover;
+  box-shadow:0 10px 28px #07111e66,inset 3px 0 #7ce7ee;
+}
+.community-home-copy h1{font-size:clamp(1.75rem,5vw,2.55rem);line-height:1.15;margin:0;color:var(--night-text)}
+.community-home-copy p{color:#c4d7e8;margin:7px 0 13px;font-size:.91rem}
+.community-home-links{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.community-home-links a,.community-home-shortcuts a{color:#dff7ff;text-decoration:none}
+.community-home-links a{padding:5px 10px;border:1px solid #60889b;border-radius:6px;font-size:.82rem;font-weight:720}
+.community-home-links a:first-child{color:#10232d;background:#9debf0;border-color:#9debf0}
+.community-home-links a:hover,.community-home-shortcuts a:hover{border-color:#9debf0;text-decoration:underline}
+.community-home-shortcuts{display:grid;gap:7px;min-width:0}
+.community-home-shortcuts a{
+  display:grid;grid-template-columns:1fr auto;gap:3px 7px;padding:8px 10px;border-radius:7px;
+  border:1px solid #567386;background:#101f2fdb;font-size:.85rem;
+}
+.community-home-shortcuts a span:first-child{grid-column:1/-1;color:#b4cedf;font-size:.72rem}
+.community-home-intro+.community-layout{margin-top:18px;gap:16px}
+.community-home-intro+.community-layout .community-main{gap:9px}
+.benben-heading{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:4px 9px;
+  background:var(--night-panel);border:1px solid #4e6a82;border-radius:8px;
+}
+.benben-heading h2{font-size:1.08rem;margin:0;color:var(--night-text)}
+.benben-heading .community-tabs{gap:6px;padding:0 3px;border:0}
+.benben-heading .community-tabs a{font-size:.79rem;padding:6px 4px}
+.benben-card{padding:9px 13px;border-radius:8px;font-size:.88rem}
+.benben-card .community-byline{font-size:.78rem}
+.benben-card .community-markdown{font-size:.88rem;line-height:1.55;margin:7px 0}
+.benben-card .community-markdown :is(h1,h2,h3){font-size:1rem;margin-top:12px}
+.benben-card .community-actions{font-size:.77rem;gap:5px 10px}
+.benben-card .community-button-quiet{font-size:.76rem;padding:3px 6px}
+.benben-reply-button{color:var(--link);border-color:transparent}
+.benben-reply-button:hover{background:var(--paper-alt);text-decoration:underline}
+.benben-composer{gap:6px;scroll-margin-top:96px}
+.benben-composer label{font-size:.83rem}
+.benben-composer .editor-toolbar{border:0;padding:2px 0 3px;gap:4px;background:transparent}
+.benben-composer .tb-btn{min-width:26px;height:26px;padding:0 5px;font-size:.77rem;border-width:1px;border-radius:4px}
+.benben-composer #content-input{min-height:70px;font-size:.88rem;padding:7px 9px;line-height:1.5;overflow:auto}
+.benben-composer>.community-button{font-size:.8rem;padding:4px 9px}
+.benben-quote-status{margin:0;color:var(--ink);font-size:.8rem}
 @media(max-width:760px){
   .community-layout,.community-layout.has-aside{grid-template-columns:minmax(0,1fr);margin-top:24px}
   .community-card{padding:13px 12px}
   .community-heading{padding:12px}
+  .community-home-intro{margin-top:22px;grid-template-columns:minmax(0,1fr);gap:12px;padding:15px}
+  .community-home-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .benben-card{padding:9px 10px}
 }
 `;
