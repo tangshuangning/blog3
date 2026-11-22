@@ -1,3 +1,4 @@
+import { markdownToolbar, markdownDialogs, markdownToolbarScript } from "./markdown-editor.js";
 import { communityCss, communityRoute, profileCommunity, saveCommunityRecord } from "./community.js";
 export { CommunityStore } from "./community.js";
 
@@ -938,7 +939,10 @@ ${mentionPicker?`<script>${mentionPickerScript}<\/script>`:""}
   </section>
   <h2 class="feed-title">\u53D1\u5E03\u7684\u6587\u7AE0</h2>
   <section class="post-grid">${postCards(articlePage.posts,accounts,"\u8FD9\u4F4D\u4F5C\u8005\u8FD8\u6CA1\u6709\u53D1\u5E03\u6587\u7AE0\u3002")}</section>
-  ${paginationControls({...articlePage,path:profilePath(username)})}`;return layout({title:`${username} \u7684\u4E2A\u4EBA\u4E3B\u9875`,body,user:viewer,community:Boolean(social)})}function notificationsPage(user,inbox){const items=inbox.entries.map(notice=>{const target="/posts/"+encodeURIComponent(notice.slug)+(notice.commentId?"#comment-"+encodeURIComponent(notice.commentId):"");return`<li class="notification-item${notice.at>inbox.readThrough?" is-unread":""}">
+  ${paginationControls({...articlePage,path:profilePath(username)})}`;return layout({title:`${username} \u7684\u4E2A\u4EBA\u4E3B\u9875`,body,user:viewer,community:Boolean(social)})}function notificationsPage(user,inbox){const items=inbox.entries.map(notice=>{const activity = Number.isSafeInteger(notice.activityId) && notice.activityId > 0;
+      const reply = Number.isSafeInteger(notice.replyId) && notice.replyId > 0;
+      const target = activity ? "/benben/" + notice.activityId + (reply ? "?reply=" + notice.replyId + "#reply-" + notice.replyId : "")
+        : "/posts/" + encodeURIComponent(notice.slug) + (notice.commentId ? "#comment-" + encodeURIComponent(notice.commentId) : "");return`<li class="notification-item${notice.at>inbox.readThrough?" is-unread":""}">
       <p><a class="mention-link" href="${profilePath(notice.actor)}">${escapeHtml2(notice.actor)}</a>
         \u5728<a href="${target}">\u300A${escapeHtml2(notice.title)}\u300B${notice.commentId?"\u7684\u8BC4\u8BBA":""}</a>\u4E2D\u63D0\u5230\u4E86\u4F60\u3002</p>
       <time datetime="${new Date(notice.at).toISOString()}">${fmtDate(notice.at)}</time>
@@ -959,7 +963,7 @@ ${mentionPicker?`<script>${mentionPickerScript}<\/script>`:""}
       ${canDelete?`<button type="button" class="comment-delete" onclick="removeComment(this)" data-url="/api/posts/${escapeHtml2(encodeURIComponent(post.slug))}/comments/${escapeHtml2(encodeURIComponent(c2.id))}/delete">\u5220\u9664</button>`:""}
     </div>
     <p class="comment-body">${linkedComment(c2.content||"",mentions)}</p>
-  </div>`}function postPage(post,user,comments,accounts,article,mentions){const outline=[];const contentHtml=renderArticle(article,outline,name=>mentionLink(name,mentions));const contents=outline.length>1?`<aside class="post-outline"><details open><summary>\u6587\u7AE0\u76EE\u5F55</summary><nav aria-label="\u6587\u7AE0\u76EE\u5F55">${outline.map(item=>`<a class="outline-level-${item.level}" href="#${item.id}">${escapeHtml2(item.title)}</a>`).join("")}</nav></details></aside>`:"";const canEdit=canEditPost(user,post);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const hiddenCount=comments.length-visibleComments.length;const commentsHtml=comments.length?visibleComments.map(comment=>commentItem(comment,user,post,accounts,mentions)).join(""):`<p class="comment-empty">\u8FD8\u6CA1\u6709\u8BC4\u8BBA\uFF0C${user?"\u6765\u5199\u7B2C\u4E00\u6761\u5427":"\u767B\u5F55\u540E\u53EF\u4EE5\u53D1\u8868\u7B2C\u4E00\u6761"}\u3002</p>`;const moreNotice=!user&&hiddenCount>0?`<p class="comment-more-notice">\u8FD8\u6709 ${hiddenCount} \u6761\u8BC4\u8BBA\uFF0C<a href="/login">\u767B\u5F55</a>\u540E\u67E5\u770B\u5168\u90E8\u3002</p>`:"";const commentForm=user?`<form id="comment-form" class="comment-form">
+  </div>`}function postPage(post,user,comments,accounts,article,mentions){const outline=[];const contentHtml=renderArticle(article,outline);const contents=outline.length>1?`<aside class="post-outline"><details open><summary>\u6587\u7AE0\u76EE\u5F55</summary><nav aria-label="\u6587\u7AE0\u76EE\u5F55">${outline.map(item=>`<a class="outline-level-${item.level}" href="#${item.id}">${escapeHtml2(item.title)}</a>`).join("")}</nav></details></aside>`:"";const canEdit=canEditPost(user,post);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const hiddenCount=comments.length-visibleComments.length;const commentsHtml=comments.length?visibleComments.map(comment=>commentItem(comment,user,post,accounts,mentions)).join(""):`<p class="comment-empty">\u8FD8\u6CA1\u6709\u8BC4\u8BBA\uFF0C${user?"\u6765\u5199\u7B2C\u4E00\u6761\u5427":"\u767B\u5F55\u540E\u53EF\u4EE5\u53D1\u8868\u7B2C\u4E00\u6761"}\u3002</p>`;const moreNotice=!user&&hiddenCount>0?`<p class="comment-more-notice">\u8FD8\u6709 ${hiddenCount} \u6761\u8BC4\u8BBA\uFF0C<a href="/login">\u767B\u5F55</a>\u540E\u67E5\u770B\u5168\u90E8\u3002</p>`:"";const commentForm=user?`<form id="comment-form" class="comment-form">
         <textarea id="comment-input" data-mention-picker aria-label="\u8BC4\u8BBA\u5185\u5BB9" maxlength="1500" rows="3" placeholder="\u8BF4\u70B9\u4EC0\u4E48\u2026\u2026 \u8F93\u5165 @\u7528\u6237\u540D \u63D0\u9192\u5BF9\u65B9" required></textarea>
         <button type="submit" class="btn btn-sm btn-save">\u53D1\u8868\u8BC4\u8BBA</button>
         <p id="comment-error" class="form-error" role="alert" hidden></p>
@@ -1055,7 +1059,7 @@ ${mentionPicker?`<script>${mentionPickerScript}<\/script>`:""}
         });
       });
     }
-  <\/script>`;return layout({title:post.title,body,user,math:contentHtml.includes('class="katex'),mentionPicker:Boolean(user)})}function editPage(post,isNew,user,article=parseArticle("",true),mentions=new Map){const p=post||{slug:"",title:"",description:"",tags:[],pubDate:new Date().toISOString().slice(0,10),content:""};const body=`
+  <\/script>`;return layout({title:post.title,body,user,math:contentHtml.includes('class="katex'),mentionPicker:Boolean(user)})}function editPage(post,isNew,user,article=parseArticle("",true)){const p=post||{slug:"",title:"",description:"",tags:[],pubDate:new Date().toISOString().slice(0,10),content:""};const body=`
   <section class="editor">
     <h1 class="editor-title">${isNew?"\u65B0\u5EFA\u5E16\u5B50":"\u7F16\u8F91\u5E16\u5B50"}</h1>
     <form id="editor-form" class="editor-form">
@@ -1082,46 +1086,9 @@ ${mentionPicker?`<script>${mentionPickerScript}<\/script>`:""}
         <div class="editor-split" id="editor-split">
           <div class="editor-pane" id="editor-pane-left">
             <label for="content-input">\u6B63\u6587\uFF08\u652F\u6301 Markdown\uFF0C\u542B\u6D1B\u8C37\u98CE\u683C\u6269\u5C55\uFF09</label>
-            <div class="editor-toolbar" role="toolbar" aria-label="\u683C\u5F0F\u5DE5\u5177\u680F">
-              <button type="button" class="tb-btn" aria-label="\u52A0\u7C97" data-tooltip="\u52A0\u7C97" data-tb="bold"><b>B</b></button>
-              <button type="button" class="tb-btn" aria-label="\u659C\u4F53" data-tooltip="\u659C\u4F53" data-tb="italic"><i>I</i></button>
-              <button type="button" class="tb-btn" aria-label="\u5220\u9664\u7EBF" data-tooltip="\u5220\u9664\u7EBF" data-tb="strike"><s>S</s></button>
-              <button type="button" class="tb-btn" aria-label="\u884C\u5185\u4EE3\u7801" data-tooltip="\u884C\u5185\u4EE3\u7801" data-tb="inline-code">
-                <svg viewBox="0 0 20 20" width="16" height="16"><polyline points="7,5 3,10 7,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="13,5 17,10 13,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <span class="tb-sep"></span>
-              <button type="button" class="tb-btn" aria-label="\u6570\u5B66\u516C\u5F0F" data-tooltip="\u6570\u5B66\u516C\u5F0F" data-tb="math">
-                <svg viewBox="0 0 20 20" width="16" height="16"><polyline points="2,11 5,14 8,4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="8" y1="4" x2="18" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u4EE3\u7801\u5757" data-tooltip="\u4EE3\u7801\u5757" data-tb="code-block">
-                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><polyline points="5,8 8,10 5,12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><line x1="10" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </button>
-              <span class="tb-sep"></span>
-              <button type="button" class="tb-btn" aria-label="\u94FE\u63A5" data-tooltip="\u94FE\u63A5" data-tb="link">
-                <svg viewBox="0 0 20 20" width="16" height="16"><path d="M8 12a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4 4l-1 1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 8a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4-4l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u56FE\u7247" data-tooltip="\u56FE\u7247" data-tb="image">
-                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="8" r="1.5" fill="currentColor"/><polyline points="3,15 8,10 12,13 17,7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u8868\u683C" data-tooltip="\u8868\u683C" data-tb="table">
-                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="3" width="16" height="14" fill="none" stroke="currentColor" stroke-width="2"/><line x1="2" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="1.6"/><line x1="2" y1="13" x2="18" y2="13" stroke="currentColor" stroke-width="1.6"/><line x1="9" y1="3" x2="9" y2="17" stroke="currentColor" stroke-width="1.6"/></svg>
-              </button>
-              <span class="tb-sep"></span>
-              <button type="button" class="tb-btn" aria-label="\u65E0\u5E8F\u5217\u8868" data-tooltip="\u65E0\u5E8F\u5217\u8868" data-tb="ul">
-                <svg viewBox="0 0 20 20" width="16" height="16"><circle cx="3.5" cy="5" r="1.5" fill="currentColor"/><line x1="8" y1="5" x2="17" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="10" r="1.5" fill="currentColor"/><line x1="8" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="3.5" cy="15" r="1.5" fill="currentColor"/><line x1="8" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u6709\u5E8F\u5217\u8868" data-tooltip="\u6709\u5E8F\u5217\u8868" data-tb="ol">
-                <svg viewBox="0 0 20 20" width="16" height="16"><text x="0" y="7" font-size="6" fill="currentColor" font-family="monospace">1</text><line x1="8" y1="5" x2="17" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><text x="0" y="12" font-size="6" fill="currentColor" font-family="monospace">2</text><line x1="8" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><text x="0" y="17" font-size="6" fill="currentColor" font-family="monospace">3</text><line x1="8" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u4EFB\u52A1\u5217\u8868" data-tooltip="\u4EFB\u52A1\u5217\u8868" data-tb="task">
-                <svg viewBox="0 0 20 20" width="16" height="16"><rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><polyline points="3.5,6 5,7.5 8.5,3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="4" x2="18" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="2" y="12" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><line x1="13" y1="15" x2="18" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-              <button type="button" class="tb-btn" aria-label="\u5F15\u7528" data-tooltip="\u5F15\u7528" data-tb="quote">
-                <svg viewBox="0 0 20 20" width="16" height="16"><line x1="4" y1="3" x2="4" y2="17" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><line x1="9" y1="6" x2="17" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="10" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              </button>
-            </div>
+            ${markdownToolbar}
             <div class="editor-source-wrap">
-              <textarea id="content-input" data-mention-picker name="content" wrap="soft" maxlength="1500000" spellcheck="false" placeholder="## \u5C0F\u6807\u9898&#10;&#10;\u652F\u6301 **\u52A0\u7C97**\u3001*\u659C\u4F53*\u3001\`\u4EE3\u7801\`\u3001\u5217\u8868\u3001> \u5F15\u7528\u3001\u8868\u683C&#10;&#10;\u6570\u5B66\u516C\u5F0F\uFF1A\u884C\u5185 $a^2+b^2=c^2$\uFF0C\u72EC\u7ACB\u6210\u884C $$\\sum_{i=1}^n i$$&#10;&#10;\u4FE1\u606F\u6846\uFF1A&#10;::::info[\u6807\u9898]&#10;\u5185\u5BB9&#10;::::&#10;\uFF08success / warning / error \u540C\u7406\uFF0C\u52A0 {open} \u9ED8\u8BA4\u5C55\u5F00\uFF09&#10;&#10;\u5C45\u4E2D\uFF1A&#10;:::align{center}&#10;\u5185\u5BB9&#10;:::">
+              <textarea id="content-input" name="content" wrap="soft" maxlength="1500000" spellcheck="false" placeholder="## \u5C0F\u6807\u9898&#10;&#10;\u652F\u6301 **\u52A0\u7C97**\u3001*\u659C\u4F53*\u3001\`\u4EE3\u7801\`\u3001\u5217\u8868\u3001> \u5F15\u7528\u3001\u8868\u683C&#10;&#10;\u6570\u5B66\u516C\u5F0F\uFF1A\u884C\u5185 $a^2+b^2=c^2$\uFF0C\u72EC\u7ACB\u6210\u884C $$\\sum_{i=1}^n i$$&#10;&#10;\u4FE1\u606F\u6846\uFF1A&#10;::::info[\u6807\u9898]&#10;\u5185\u5BB9&#10;::::&#10;\uFF08success / warning / error \u540C\u7406\uFF0C\u52A0 {open} \u9ED8\u8BA4\u5C55\u5F00\uFF09&#10;&#10;\u5C45\u4E2D\uFF1A&#10;:::align{center}&#10;\u5185\u5BB9&#10;:::">
 ${escapeHtml2(p.content||"")}</textarea>
             </div>
           </div>
@@ -1131,52 +1098,14 @@ ${escapeHtml2(p.content||"")}</textarea>
               <span id="preview-title">\u5B9E\u65F6\u9884\u89C8</span>
               <label class="preview-follow"><input id="preview-follow" type="checkbox" checked /> \u8DDF\u968F\u7F16\u8F91\u4F4D\u7F6E</label>
             </div>
-            <div id="content-preview" class="prose editor-preview" role="region" aria-labelledby="preview-title">${renderArticle(article,void 0,name=>mentionLink(name,mentions))}</div>
+            <div id="content-preview" class="prose editor-preview" role="region" aria-labelledby="preview-title">${renderArticle(article)}</div>
             <span id="preview-status" role="status"></span>
           </div>
         </div>
         <div class="editor-h-divider" id="editor-h-divider" role="separator" aria-orientation="horizontal" aria-label="\u62D6\u52A8\u8C03\u6574\u9AD8\u5EA6"></div>
       </div>
 
-      <div id="code-modal" role="dialog" aria-modal="true" aria-label="\u63D2\u5165\u4EE3\u7801\u5757" class="delete-panel" hidden>
-        <div class="delete-panel-inner code-modal-inner">
-          <p class="delete-warning">\u63D2\u5165\u4EE3\u7801\u5757</p>
-          <select id="code-lang" class="code-lang-select">
-            <option value="cpp">C++</option>
-            <option value="c">C</option>
-            <option value="python">Python</option>
-            <option value="java">Java</option>
-            <option value="javascript">JavaScript</option>
-            <option value="typescript">TypeScript</option>
-            <option value="csharp">C#</option>
-            <option value="go">Go</option>
-            <option value="rust">Rust</option>
-            <option value="html">HTML</option>
-            <option value="css">CSS</option>
-            <option value="sql">SQL</option>
-            <option value="bash">Bash</option>
-            <option value="plaintext">\u7EAF\u6587\u672C</option>
-          </select>
-          <textarea id="code-input" class="code-modal-textarea" rows="8" placeholder="\u7C98\u8D34\u4EE3\u7801\u2026\u2026"></textarea>
-          <div class="delete-panel-actions">
-            <button type="button" class="btn btn-ghost" onclick="closeCodeModal()">\u53D6\u6D88</button>
-            <button type="button" class="btn btn-save" onclick="confirmCodeInsert()">\u786E\u5B9A</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="link-modal" role="dialog" aria-modal="true" aria-labelledby="link-modal-title" class="delete-panel" hidden>
-        <div class="delete-panel-inner code-modal-inner">
-          <p class="delete-warning" id="link-modal-title">\u63D2\u5165\u94FE\u63A5</p>
-          <input type="text" id="link-name" class="code-lang-select" aria-label="\u94FE\u63A5\u540D\u79F0" placeholder="\u94FE\u63A5\u540D\u79F0" />
-          <input type="text" id="link-url" class="code-lang-select" aria-label="\u7F51\u5740" placeholder="https://" />
-          <div class="delete-panel-actions">
-            <button type="button" class="btn btn-ghost" onclick="closeLinkModal()">\u53D6\u6D88</button>
-            <button type="button" class="btn btn-save" onclick="confirmLinkInsert()">\u786E\u5B9A</button>
-          </div>
-        </div>
-      </div>
-
+      ${markdownDialogs}
       <div class="editor-actions">
         <button type="submit" class="btn btn-save">${isNew?"\u26A1 \u53D1\u5E03":"\u26A1 \u4FDD\u5B58\u4FEE\u6539"}</button>
         <a href="${isNew?"/":"/posts/"+encodeURIComponent(p.slug)}" class="btn btn-ghost">\u53D6\u6D88</a>
@@ -1370,182 +1299,6 @@ ${escapeHtml2(p.content||"")}</textarea>
       textarea.addEventListener('input', queuePreview);
       indexPreview(textarea.value);
 
-      // \u2500\u2500 toolbar: insert/wrap markdown at the cursor \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-      // Uses document.execCommand('insertText', ...) rather than setting
-      // textarea.value directly \u2014 direct .value assignment wipes the
-      // browser's native undo history, so Ctrl+Z would stop working after
-      // any toolbar click. execCommand keeps it intact. Falls back to
-      // direct assignment only if execCommand is unavailable.
-      function refresh() {
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-
-      function insertAtSelection(text) {
-        textarea.focus();
-        var ok = false;
-        try { ok = document.execCommand('insertText', false, text); } catch (e) { ok = false; }
-        if (!ok) {
-          var start = textarea.selectionStart, end = textarea.selectionEnd;
-          var value = textarea.value;
-          textarea.value = value.slice(0, start) + text + value.slice(end);
-          textarea.setSelectionRange(start + text.length, start + text.length);
-        }
-        refresh();
-      }
-
-      function wrapSelection(before, after, placeholder) {
-        var start = textarea.selectionStart;
-        var end = textarea.selectionEnd;
-        var selected = textarea.value.slice(start, end) || placeholder || '';
-        insertAtSelection(before + selected + after);
-        var selStart = start + before.length;
-        var selEnd = selStart + selected.length;
-        textarea.setSelectionRange(selStart, selEnd);
-      }
-
-      function insertBlock(text) {
-        var start = textarea.selectionStart;
-        var value = textarea.value;
-        var needsLeadingNewline = start > 0 && value[start - 1] !== '\\n';
-        insertAtSelection((needsLeadingNewline ? '\\n' : '') + text);
-      }
-
-      function prefixLines(prefixFn) {
-        var start = textarea.selectionStart;
-        var end = textarea.selectionEnd;
-        var value = textarea.value;
-        var lineStart = value.lastIndexOf('\\n', start - 1) + 1;
-        var lineEnd = value.indexOf('\\n', end);
-        if (lineEnd === -1) lineEnd = value.length;
-        var block = value.slice(lineStart, lineEnd);
-        var newBlock = block.split('\\n').map(prefixFn).join('\\n');
-        textarea.setSelectionRange(lineStart, lineEnd);
-        insertAtSelection(newBlock);
-        textarea.setSelectionRange(lineStart, lineStart + newBlock.length);
-      }
-
-      var TOOLBAR_ACTIONS = {
-        'bold': function () { wrapSelection('**', '**', '\u52A0\u7C97\u6587\u5B57'); },
-        'italic': function () { wrapSelection('*', '*', '\u659C\u4F53\u6587\u5B57'); },
-        'strike': function () { wrapSelection('~~', '~~', '\u5220\u9664\u7EBF\u6587\u5B57'); },
-        'inline-code': function () { wrapSelection('\`', '\`', 'code'); },
-        'math': function () { wrapSelection('$$', '$$', ''); },
-        'code-block': function () { openCodeModal(); },
-        'link': function () { openLinkModal(false); },
-        'image': function () { openLinkModal(true); },
-        'table': function () { insertBlock('| \u52171 | \u52172 |\\n|:---|:---:|\\n| \u5185\u5BB9 | \u5185\u5BB9 |\\n'); },
-        'ul': function () { prefixLines(function (l) { return '- ' + l; }); },
-        'ol': function () { prefixLines(function (l, i) { return (i + 1) + '. ' + l; }); },
-        'task': function () { prefixLines(function (l) { return '- [ ] ' + l; }); },
-        'quote': function () { prefixLines(function (l) { return '> ' + l; }); },
-      };
-
-      document.querySelectorAll('.tb-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var action = TOOLBAR_ACTIONS[btn.dataset.tb];
-          if (action) action();
-        });
-      });
-
-      // \u2500\u2500 code-block modal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-      function openCodeModal() {
-        document.getElementById('code-input').value = '';
-        document.getElementById('code-modal').hidden = false;
-        document.getElementById('code-input').focus();
-      }
-      function closeCodeModal() {
-        document.getElementById('code-modal').hidden = true;
-        textarea.focus();
-      }
-      function confirmCodeInsert() {
-        var lang = document.getElementById('code-lang').value;
-        var code = document.getElementById('code-input').value;
-        var runs = code.match(/\\x60+/g) || [];
-        var size = runs.reduce(function (length, run) { return Math.max(length, run.length + 1); }, 3);
-        var fence = String.fromCharCode(96).repeat(size);
-        insertBlock(fence + lang + '\\n' + code + (code.endsWith('\\n') ? '' : '\\n') + fence + '\\n');
-        closeCodeModal();
-      }
-      window.openCodeModal = openCodeModal;
-      window.closeCodeModal = closeCodeModal;
-      window.confirmCodeInsert = confirmCodeInsert;
-
-      // \u2500\u2500 link / image modal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-      var linkModalIsImage = false;
-      function openLinkModal(isImage) {
-        linkModalIsImage = isImage;
-        document.getElementById('link-modal-title').textContent = isImage ? '\u63D2\u5165\u56FE\u7247' : '\u63D2\u5165\u94FE\u63A5';
-        document.getElementById('link-name').placeholder = isImage ? '\u56FE\u7247\u63CF\u8FF0' : '\u94FE\u63A5\u540D\u79F0';
-        document.getElementById('link-url').placeholder = isImage ? 'https://\uFF0C\u6216\u76F4\u63A5\u7C98\u8D34\u526A\u8D34\u677F\u56FE\u7247\uFF08Ctrl+V\uFF09' : 'https://';
-        document.getElementById('link-name').value = '';
-        document.getElementById('link-url').value = '';
-        document.getElementById('link-modal').hidden = false;
-        document.getElementById('link-name').focus();
-      }
-      function closeLinkModal() {
-        document.getElementById('link-modal').hidden = true;
-        textarea.focus();
-      }
-      function confirmLinkInsert() {
-        var name = document.getElementById('link-name').value || (linkModalIsImage ? '\u56FE\u7247\u63CF\u8FF0' : '\u94FE\u63A5\u6587\u5B57');
-        var url = document.getElementById('link-url').value || 'https://';
-        var prefix = linkModalIsImage ? '![' : '[';
-        insertAtSelection(prefix + name + '](' + url + ')');
-        closeLinkModal();
-      }
-      window.openLinkModal = openLinkModal;
-      window.closeLinkModal = closeLinkModal;
-      window.confirmLinkInsert = confirmLinkInsert;
-
-      // Keep diagrams and code screenshots lossless when they fit.
-      function compressImageFile(file, callback) {
-        var reader = new FileReader();
-        reader.onload = function (e) {
-          var img = new Image();
-          img.onload = function () {
-            var maxDim = 2000;
-            var w = img.width, h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
-              else { w = Math.round(w * maxDim / h); h = maxDim; }
-            }
-            var canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            var ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const png = canvas.toDataURL('image/png');
-            callback(png.length <= 700000 ? png : canvas.toDataURL('image/webp', 0.92));
-          };
-          img.onerror = function () { callback(e.target.result); }; // fallback: use the raw file
-          img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-      }
-
-      // paste an image from the clipboard straight into the URL field \u2014
-      // compresses it and converts it to a data URI so no separate image
-      // host is needed
-      var linkUrlInput = document.getElementById('link-url');
-      if (linkUrlInput) {
-        linkUrlInput.addEventListener('paste', function (e) {
-          var cd = e.clipboardData || window.clipboardData;
-          if (!cd || !cd.items) return;
-          for (var i = 0; i < cd.items.length; i++) {
-            if (cd.items[i].type && cd.items[i].type.indexOf('image') !== -1) {
-              var blob = cd.items[i].getAsFile();
-              if (!blob) continue;
-              e.preventDefault();
-              linkUrlInput.value = '\u538B\u7F29\u4E2D\u2026';
-              compressImageFile(blob, function (dataUrl) {
-                linkUrlInput.value = dataUrl;
-              });
-              break;
-            }
-          }
-        });
-      }
-
       // \u2500\u2500 resizable panes: drag the vertical divider to change the
       // left/right width ratio, drag the horizontal one to change height \u2500\u2500
       (function () {
@@ -1608,6 +1361,8 @@ ${escapeHtml2(p.content||"")}</textarea>
       })();
     })();
   <\/script>
+
+  <script>${markdownToolbarScript}<\/script>
 
   <script>
     const form = document.getElementById('editor-form');
@@ -1692,11 +1447,10 @@ ${escapeHtml2(p.content||"")}</textarea>
         submitted = true;
         clearTimeout(draftTimer);
         clearDraft();
-        if (data.mentionDeliveryFailed) alert('\u6587\u7AE0\u5DF2\u4FDD\u5B58\uFF0C\u90E8\u5206 @ \u63D0\u9192\u6682\u65F6\u53D1\u9001\u5931\u8D25\u3002');
         location.href = '/posts/' + encodeURIComponent(data.slug);
       });
     });
-  <\/script>`;return layout({title:isNew?"\u65B0\u5EFA\u5E16\u5B50":`\u7F16\u8F91 \xB7 ${p.title}`,body,active:isNew?"new":"",user,math:true,mentionPicker:true})}function problemIndexPage(user){const rows=problems.map(problem=>`<li><a class="problem-row" href="/problems/${encodeURIComponent(problem.id)}">
+  <\/script>`;return layout({title:isNew?"\u65B0\u5EFA\u5E16\u5B50":`\u7F16\u8F91 \xB7 ${p.title}`,body,active:isNew?"new":"",user,math:true})}function problemIndexPage(user){const rows=problems.map(problem=>`<li><a class="problem-row" href="/problems/${encodeURIComponent(problem.id)}">
     <span class="problem-id">${escapeHtml2(problem.id)}</span><strong>${escapeHtml2(problem.title)}</strong>
     <span class="problem-level">${escapeHtml2(problem.level)}</span><span class="problem-arrow" aria-hidden="true">\u2197</span>
   </a></li>`).join("");const body=`<section class="problem-index" aria-labelledby="problem-index-title">
@@ -1879,7 +1633,19 @@ ${escapeHtml2(p.content||"")}</textarea>
       ON CONFLICT(key) DO UPDATE SET minute=excluded.minute,
       count=CASE WHEN blog_rate.minute=excluded.minute THEN blog_rate.count+1 ELSE 1 END RETURNING count`).bind(key,minute).first();count=row.count;if(Math.random()<.02){await env.BLOG_DB.prepare("DELETE FROM blog_rate WHERE minute < ?").bind(minute-10).run()}}else{if(limits.size>=4096&&!limits.has(key))limits.delete(limits.keys().next().value);const previous=limits.get(key);count=previous?.minute===minute?previous.count+1:1;limits.set(key,{minute,count})}if(count>max)throw new RequestError("\u64CD\u4F5C\u592A\u9891\u7E41\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",429)}function parseCookies(request){const header=request.headers.get("Cookie")||"";const cookies=Object.create(null);header.split(";").forEach(pair=>{const idx=pair.indexOf("=");if(idx===-1)return;const k=pair.slice(0,idx).trim();const v=pair.slice(idx+1).trim();if(k==="session"&&/^[0-9a-f-]{36}$/i.test(v))cookies[k]=v});return cookies}var SESSION_TTL_SECONDS=60*60*24*30;function sessionCookieHeader(token){return`session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`}function clearSessionCookieHeader(){return`session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`}async function getSessionUser(request,env){const token=parseCookies(request).session;if(!token)return null;const session=await env.POSTS.get(`session:${token}`,"json");if(!session)return null;const key=session.key||session.username;const freshUser=await getUser(env,key);if(!freshUser||session.userCreated&&session.userCreated!==freshUser.createdAt)return null;const account=publicAccount(env,key,freshUser);if(account.role==="admin"){const stored=await env.POSTS.get(adminTagKey(key),"json");account.adminTag=matchingAdminTag(stored,account)}return{username:freshUser.username,key,createdAt:freshUser.createdAt,role:freshUser.role,adminTag:account.adminTag,isRootAdmin:isAdminUsername(env,freshUser.username)}}function cleanUsername(name){return(name||"").trim()}function bytesToHex(bytes){return Array.from(bytes).map(b=>b.toString(16).padStart(2,"0")).join("")}function hexToBytes(hex){const bytes=new Uint8Array(hex.length/2);for(let i2=0;i2<bytes.length;i2++)bytes[i2]=parseInt(hex.substr(i2*2,2),16);return bytes}function randomSaltHex(){return bytesToHex(crypto.getRandomValues(new Uint8Array(16)))}async function hashPassword(password,saltHex){const enc=new TextEncoder;const keyMaterial=await crypto.subtle.importKey("raw",enc.encode(password),{name:"PBKDF2"},false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:hexToBytes(saltHex),iterations:5e4,hash:"SHA-256"},keyMaterial,256);return bytesToHex(new Uint8Array(bits))}async function verifyPassword(password,saltHex,hashHex){const computed=await hashPassword(password,saltHex);return computed===hashHex}var USERS_INDEX_KEY="users-index";async function getUsersIndex(env){const raw=await env.POSTS.get(USERS_INDEX_KEY,"json");return Array.isArray(raw)?raw:[]}async function addToUsersIndex(env,username){const usernames=await getUsersIndex(env);const norm=cleanUsername(username);if(!usernames.includes(norm)){usernames.push(norm);await env.POSTS.put(USERS_INDEX_KEY,JSON.stringify(usernames))}}async function removeFromUsersIndex(env,username){const usernames=await getUsersIndex(env);const norm=cleanUsername(username);const next=usernames.filter(u=>u!==norm);if(next.length!==usernames.length){await env.POSTS.put(USERS_INDEX_KEY,JSON.stringify(next))}}async function getUser(env,username){const key=cleanUsername(username);if(env.BLOG_DB){const row=await env.BLOG_DB.prepare("SELECT data FROM blog_users WHERE username=?").bind(key).first();return row?JSON.parse(row.data):null}return env.POSTS.get(`user:${key}`,"json")}function publicAccount(env,key,user){return{key,role:user.role==="admin"||isAdminUsername(env,user.username)?"admin":"user",createdAt:user.createdAt}}function adminTagKey(key){return`admin-tag:${key}`}function matchingAdminTag(stored,account){return stored?.createdAt===(account.createdAt??null)&&typeof stored.tag==="string"?stored.tag:""}async function addAdminTags(env,accounts){const admins=[...accounts].filter(account=>account.role==="admin");for(let i2=0;i2<admins.length;i2+=80){const batch=admins.slice(i2,i2+80);const stored=await env.POSTS.get(batch.map(account=>adminTagKey(account.key)),"json");for(const account of batch){account.adminTag=matchingAdminTag(stored.get(adminTagKey(account.key)),account)}}}async function getPublicAuthors(env,usernames,includeTags=true){const names=[...new Set(usernames.filter(Boolean))];const keys=[...new Set(names.flatMap(name=>[name,name.toLowerCase()]))];const records=new Map;for(let i2=0;i2<keys.length;i2+=80){const batch=keys.slice(i2,i2+80);if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare(`SELECT username AS key, json_extract(data,'$.username') AS username,
          json_extract(data,'$.role') AS role, json_extract(data,'$.createdAt') AS createdAt
-         FROM blog_users WHERE username IN (${batch.map(()=>"?").join(",")})`).bind(...batch).all();for(const row of results)records.set(row.key,row)}else{const users=await env.POSTS.get(batch.map(key=>`user:${key}`),"json");for(const key of batch)records.set(key,users.get(`user:${key}`))}}const accounts=new Map;for(const name of names){const exact=records.get(name);const legacy=records.get(name.toLowerCase());if(exact?.username===name)accounts.set(name,publicAccount(env,name,exact));else if(legacy?.username===name)accounts.set(name,publicAccount(env,name.toLowerCase(),legacy))}if(includeTags)await addAdminTags(env,accounts.values());return accounts}var INBOX_LIMIT=50;var NOTIFICATION_LIFETIME=30*86400;var NOTIFICATION_CLOCK=9999999999999;function notificationScope(account){return account.key+":"+(account.createdAt||"")+":"}function reverseTime(at){return String(NOTIFICATION_CLOCK-at).padStart(13,"0")}function articleMentionNames(content){return content?.includes("@")?parseArticle(content).names:new Set}async function mentionRecipients(env,names,previousContent=""){const distinctNames=[...new Set(names)];if(distinctNames.length>10){const previousNames=articleMentionNames(previousContent);const added=distinctNames.filter(name=>!previousNames.has(name));if(added.length>10)throw new RequestError("\u6BCF\u6B21\u6700\u591A\u65B0\u589E 10 \u4E2A @ \u63D0\u9192\u3002")}return getPublicAuthors(env,distinctNames,false)}async function sendMentionNotices(env,actor,recipients,post,commentId=""){if(!recipients.size)return{};const at=Date.now();const suffix=reverseTime(at)+":"+crypto.randomUUID();const metadata={actor:actor.username,slug:post.slug,commentId,at,title:Array.from(post.title).slice(0,80).join("")};const writes=await Promise.allSettled([...recipients.values()].map(recipient=>env.POSTS.put("mention:"+notificationScope(recipient)+suffix,"",{metadata,expirationTtl:NOTIFICATION_LIFETIME})));const failed=writes.filter(write=>write.status==="rejected").length;if(!failed)return{};console.error("Mention notification writes failed:",failed);return{mentionDeliveryFailed:true}}async function getReadThrough(env,user){const prefix="mention-read:"+notificationScope(user);const{keys}=await env.POSTS.list({prefix,limit:1});return keys.length?NOTIFICATION_CLOCK-Number(keys[0].name.slice(prefix.length,prefix.length+13)):0}async function readInbox(env,user,minimumReadThrough=0){const[{keys},savedReadThrough]=await Promise.all([env.POSTS.list({prefix:"mention:"+notificationScope(user),limit:INBOX_LIMIT+1}),getReadThrough(env,user)]);const readThrough=Math.max(savedReadThrough,minimumReadThrough);const notices=keys.map(key=>key.metadata);const unread=notices.filter(notice=>notice.at>readThrough).length;return{entries:notices.slice(0,INBOX_LIMIT),readThrough,unread:Math.min(unread,INBOX_LIMIT),more:unread>INBOX_LIMIT}}async function markInboxRead(env,user,through){if(through<=await getReadThrough(env,user))return;await env.POSTS.put("mention-read:"+notificationScope(user)+reverseTime(through)+":"+crypto.randomUUID(),"",{expirationTtl:NOTIFICATION_LIFETIME})}async function saveUser(env,user,key=cleanUsername(user.username),create=false){if(env.BLOG_DB){const db=env.BLOG_DB;const result=create?await db.prepare("INSERT INTO blog_users (username, data) VALUES (?, ?) ON CONFLICT(username) DO NOTHING").bind(key,JSON.stringify(user)).run():await db.prepare("UPDATE blog_users SET data=? WHERE username=?").bind(JSON.stringify(user),key).run();return result.meta.changes>0}await env.POSTS.put(`user:${key}`,JSON.stringify(user));await addToUsersIndex(env,key);return true}async function deleteUser(env,username){if(env.BLOG_DB){await env.BLOG_DB.prepare("DELETE FROM blog_users WHERE username=?").bind(cleanUsername(username)).run();return}await env.POSTS.delete(`user:${cleanUsername(username)}`);await removeFromUsersIndex(env,username)}async function listUsers(env){if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare("SELECT username, data FROM blog_users ORDER BY json_extract(data, '$.createdAt')").all();return results.map(row=>({...JSON.parse(row.data),_rawKey:row.username}))}const usernames=await getUsersIndex(env);const users=await Promise.all(usernames.map(async rawKey=>{const u=await getUser(env,rawKey);if(!u)return null;return{...u,_rawKey:rawKey}}));return users.filter(Boolean).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""))}function searchUsers(users,query){const q=query.trim().toLowerCase();if(!q)return users;return users.filter(u=>(u.username||"").toLowerCase().includes(q))}var MENTION_SUGGESTION_LIMIT=8;async function findMentionUsernames(env,query){const normalized=query.toLowerCase();if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare(`
+         FROM blog_users WHERE username IN (${batch.map(()=>"?").join(",")})`).bind(...batch).all();for(const row of results)records.set(row.key,row)}else{const users=await env.POSTS.get(batch.map(key=>`user:${key}`),"json");for(const key of batch)records.set(key,users.get(`user:${key}`))}}const accounts=new Map;for(const name of names){const exact=records.get(name);const legacy=records.get(name.toLowerCase());if(exact?.username===name)accounts.set(name,publicAccount(env,name,exact));else if(legacy?.username===name)accounts.set(name,publicAccount(env,name.toLowerCase(),legacy))}if(includeTags)await addAdminTags(env,accounts.values());return accounts}var INBOX_LIMIT=50;var NOTIFICATION_LIFETIME=30*86400;var NOTIFICATION_CLOCK=9999999999999;function notificationScope(account){return account.key+":"+(account.createdAt||"")+":"}function reverseTime(at){return String(NOTIFICATION_CLOCK-at).padStart(13,"0")}async function mentionRecipients(env,names) {
+  const distinctNames = [...new Set(names)];
+  if (distinctNames.length > 10) throw new RequestError("每次最多提及 10 个用户。");
+  return getPublicAuthors(env,distinctNames,false);
+}
+async function sendMentionNotices(env,actor,recipients,target) {
+  if (!recipients.size) return {};
+  const at = Date.now();
+  const suffix = reverseTime(at) + ":" + crypto.randomUUID();
+  const metadata = {
+    ...target, actor: actor.username, at, title: Array.from(target.title).slice(0,80).join(""),
+  };
+  const writes=await Promise.allSettled([...recipients.values()].map(recipient=>env.POSTS.put("mention:"+notificationScope(recipient)+suffix,"",{metadata,expirationTtl:NOTIFICATION_LIFETIME})));const failed=writes.filter(write=>write.status==="rejected").length;if(!failed)return{};console.error("Mention notification writes failed:",failed);return{mentionDeliveryFailed:true}}async function getReadThrough(env,user){const prefix="mention-read:"+notificationScope(user);const{keys}=await env.POSTS.list({prefix,limit:1});return keys.length?NOTIFICATION_CLOCK-Number(keys[0].name.slice(prefix.length,prefix.length+13)):0}async function readInbox(env,user,minimumReadThrough=0){const[{keys},savedReadThrough]=await Promise.all([env.POSTS.list({prefix:"mention:"+notificationScope(user),limit:INBOX_LIMIT+1}),getReadThrough(env,user)]);const readThrough=Math.max(savedReadThrough,minimumReadThrough);const notices=keys.map(key=>key.metadata);const unread=notices.filter(notice=>notice.at>readThrough).length;return{entries:notices.slice(0,INBOX_LIMIT),readThrough,unread:Math.min(unread,INBOX_LIMIT),more:unread>INBOX_LIMIT}}async function markInboxRead(env,user,through){if(through<=await getReadThrough(env,user))return;await env.POSTS.put("mention-read:"+notificationScope(user)+reverseTime(through)+":"+crypto.randomUUID(),"",{expirationTtl:NOTIFICATION_LIFETIME})}async function saveUser(env,user,key=cleanUsername(user.username),create=false){if(env.BLOG_DB){const db=env.BLOG_DB;const result=create?await db.prepare("INSERT INTO blog_users (username, data) VALUES (?, ?) ON CONFLICT(username) DO NOTHING").bind(key,JSON.stringify(user)).run():await db.prepare("UPDATE blog_users SET data=? WHERE username=?").bind(JSON.stringify(user),key).run();return result.meta.changes>0}await env.POSTS.put(`user:${key}`,JSON.stringify(user));await addToUsersIndex(env,key);return true}async function deleteUser(env,username){if(env.BLOG_DB){await env.BLOG_DB.prepare("DELETE FROM blog_users WHERE username=?").bind(cleanUsername(username)).run();return}await env.POSTS.delete(`user:${cleanUsername(username)}`);await removeFromUsersIndex(env,username)}async function listUsers(env){if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare("SELECT username, data FROM blog_users ORDER BY json_extract(data, '$.createdAt')").all();return results.map(row=>({...JSON.parse(row.data),_rawKey:row.username}))}const usernames=await getUsersIndex(env);const users=await Promise.all(usernames.map(async rawKey=>{const u=await getUser(env,rawKey);if(!u)return null;return{...u,_rawKey:rawKey}}));return users.filter(Boolean).sort((a,b)=>(a.createdAt||"").localeCompare(b.createdAt||""))}function searchUsers(users,query){const q=query.trim().toLowerCase();if(!q)return users;return users.filter(u=>(u.username||"").toLowerCase().includes(q))}var MENTION_SUGGESTION_LIMIT=8;async function findMentionUsernames(env,query){const normalized=query.toLowerCase();if(env.BLOG_DB){const{results}=await env.BLOG_DB.prepare(`
       SELECT DISTINCT json_extract(data, '$.username') AS name FROM blog_users
       WHERE instr(lower(name), ?) > 0
       ORDER BY name = ? DESC, (instr(lower(name), ?) = 1) DESC, lower(name), name
@@ -2042,6 +1808,7 @@ var INDEX_KEY="index";async function getIndex(env){const raw=await env.POSTS.get
 function canEditPost(user,post){if(!user)return false;return user.role==="admin"||user.username===post.authorUsername}var worker_default={async fetch(request,env){const url=new URL(request.url);const{pathname}=url;if(pathname==="/math.css"){return new Response(style_generated_default,{headers:{"Content-Type":"text/css; charset=UTF-8","Cache-Control":"public, max-age=86400"}})}if(pathname==="/style.css"||pathname==="/pcb-chip-loop.mp4"||pathname==="/pcb-chip-poster.webp"){return env.ASSETS.fetch(request)}try{if(request.method==="POST"&&env.BLOG_READ_ONLY==="1"&&pathname!=="/api/preview"){return text3("\u7F51\u7AD9\u6682\u65F6\u5904\u4E8E\u53EA\u8BFB\u72B6\u6001\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",503)}const origin=request.headers.get("Origin");if(request.method==="POST"&&(origin&&origin!==url.origin||request.headers.get("Sec-Fetch-Site")==="cross-site")){return text3("\u8BF7\u6C42\u6765\u6E90\u4E0D\u7B26\u3002",403)}const user=await getSessionUser(request,env);
       const community = await communityRoute(request,env,user,{
         html,text:text3,layout,redirect,getPublicAuthors,authorName,findMentionUsernames,enforceRate,
+        parseArticle,renderArticle,mentionLink,mentionRecipients,sendMentionNotices,
         hydroSettings,resultFromHydro,recordNames:recordAuthorNames,
         problem: id => problems.find(entry => entry.id === id),
       });
@@ -2065,4 +1832,4 @@ function canEditPost(user,post){if(!user)return false;return user.role==="admin"
         const validSeenThrough = Number.isSafeInteger(seenThrough) && seenThrough > 0 && seenThrough <= Date.now();
         const { unread, more } = await readInbox(env, user, validSeenThrough ? seenThrough : 0);
         return json({ unread, more });}if(request.method==="GET"&&pathname==="/notifications"){if(!user)return redirect("/login");return html(notificationsPage(user,await readInbox(env,user)))}if(request.method==="POST"&&pathname==="/notifications/read"){if(!user)return redirect("/login");const through=Number(url.searchParams.get("through"));if(!Number.isSafeInteger(through)||through<=0||through>Date.now()){return text3("\u901A\u77E5\u65F6\u95F4\u65E0\u6548\u3002",400)}await markInboxRead(env,user,through);if(request.headers.get("Accept")==="application/json"){const{unread,more}=await readInbox(env,user,through);return json({unread,more})}return redirect("/notifications")}if(request.method==="GET"&&(pathname==="/problems"||pathname==="/problems/")){return html(problemIndexPage(user))}const problemMatch=/^\/problems\/([^/]+)\/?$/.exec(pathname);if(request.method==="GET"&&problemMatch){const id=decodeURIComponent(problemMatch[1]).toUpperCase();const problem=problems.find(entry=>entry.id===id);return problem?html(problemPage(problem,user,Boolean(problem.hydroPid&&hydroSettings(env)))):html(notFoundPage(user),404)}if(request.method==="GET"&&(pathname==="/"||pathname==="/articles"||pathname==="/articles/")){const archive=pathname!=="/";const owner=cleanUsername(env.BLOG_OWNER_USERNAME)||DEFAULT_OWNER_USERNAME;const q=(url.searchParams.get("q")||"").trim().slice(0,120);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const page=await getPostPage(env,q,requestedPage,archive?null:owner);const accounts=await getPublicAuthors(env,page.posts.map(post=>post.authorUsername));return html(homePage(page.posts,page,user,accounts,archive))}const profileMatch=pathname.match(/^\/users\/([^/]+)\/?$/);if(request.method==="GET"&&profileMatch){let username;try{username=decodeURIComponent(profileMatch[1])}catch{return html(notFoundPage(user),404)}if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username))return html(notFoundPage(user),404);const requestedPage=parseInt(url.searchParams.get("page")||"1",10)||1;const[accounts,page]=await Promise.all([getPublicAuthors(env,[username]),getPostPage(env,"",requestedPage,username)]);if(!accounts.has(username)&&!page.total)return html(notFoundPage(user),404);const social = await profileCommunity(env, user, username, accounts.get(username));
-        return html(userProfilePage(username,page,accounts,user,social))}if(request.method==="GET"&&pathname==="/login"){const target=url.searchParams.get("next")||"";const next=/^\/problems\/[A-Z0-9]+$/.test(target)?target:"/";if(user)return redirect(next);return html(loginPage(next))}if(request.method==="GET"&&pathname==="/admin/users"){if(!user)return redirect("/login");if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const q=(url.searchParams.get("q")||"").slice(0,120);const allUsers=await listUsers(env);const filtered=q.trim()?searchUsers(allUsers,q):allUsers;return html(await adminUsersPage(filtered,q,user,env))}let m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(isAdminUsername(env,targetUsername)){return text3("\u8FD9\u4E2A\u8D26\u53F7\u662F\u73AF\u5883\u53D8\u91CF\u91CC\u914D\u7F6E\u7684\u6839\u7BA1\u7406\u5458\uFF0C\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403)}const body=await readJson(request);if(body.role!=="admin"&&body.role!=="user")return text3("\u89D2\u8272\u53C2\u6570\u4E0D\u5BF9",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);if(isAdminUsername(env,target.username))return text3("\u6839\u7BA1\u7406\u5458\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403);target.role=body.role;await saveUser(env,target,cleanUsername(targetUsername));return json({ok:true})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/tag$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!user.isRootAdmin)return text3("\u53EA\u6709\u6839\u7BA1\u7406\u5458\u53EF\u4EE5\u4FEE\u6539\u7BA1\u7406\u5458\u6807\u7B7E",403);let key;try{key=decodeURIComponent(m[1])}catch{return text3("\u8D26\u53F7\u53C2\u6570\u4E0D\u5BF9",400)}key=stringField(key,20,"\u8D26\u53F7");const{tag:value}=await readJson(request);const tag=stringField(value,ADMIN_TAG_MAX,"\u7BA1\u7406\u5458\u6807\u7B7E");if(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]/u.test(tag)){return text3("\u7BA1\u7406\u5458\u6807\u7B7E\u8BF7\u586B\u5199\u4E00\u884C\u53EF\u89C1\u6587\u5B57",400)}const target=await getUser(env,key);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);const account=publicAccount(env,key,target);if(account.role!=="admin")return text3("\u53EA\u53EF\u4EE5\u4E3A\u7BA1\u7406\u5458\u8BBE\u7F6E\u6807\u7B7E",400);if(tag)await env.POSTS.put(adminTagKey(key),JSON.stringify({createdAt:account.createdAt??null,tag}));else await env.POSTS.delete(adminTagKey(key));return json({ok:true,tag:tag||DEFAULT_ADMIN_TAG})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(cleanUsername(targetUsername)===user.key||cleanUsername(targetUsername)===user.username)return text3("\u4E0D\u80FD\u5220\u9664\u81EA\u5DF1\u5F53\u524D\u767B\u5F55\u7684\u8D26\u53F7",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);await deleteUser(env,targetUsername);return json({ok:true})}if(request.method==="GET"&&pathname==="/new"){if(!user)return redirect("/login");return html(editPage(null,true,user))}m=pathname.match(/^\/posts\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);const comments=await getComments(env,post);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const article=parseArticle(post.content||"");const names=new Set(article.names);for(const comment of visibleComments){for(const match of plainMentions(comment.content||""))names.add(match[1])}const[accounts,mentions]=await Promise.all([getPublicAuthors(env,[post.authorUsername,...visibleComments.map(comment=>comment.authorUsername)]),getPublicAuthors(env,[...names].slice(0,100),false)]);return html(postPage(post,user,comments,accounts,article,mentions))}m=pathname.match(/^\/edit\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);if(!user)return redirect("/login");if(!canEditPost(user,post))return text3("\u6CA1\u6709\u6743\u9650",403);const article=parseArticle(post.content||"",true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(editPage(post,false,user,article,mentions))}if(request.method==="GET"&&pathname==="/api/debug/admin-check"){const testUsername=url.searchParams.get("username")||"";const raw=env.ADMIN_USERNAMES||"";const parsed=raw.split(",").map(s=>cleanUsername(s)).filter(Boolean);return json({adminUsernamesConfigured:!!raw,rawLength:raw.length,parsedCount:parsed.length,testUsername,normalizedTestUsername:cleanUsername(testUsername),wouldBeAdmin:testUsername?isAdminUsername(env,testUsername):null})}if(request.method==="POST"&&pathname==="/api/auth/register"){await enforceRate(request,env,"register",4);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)){return text3("\u7528\u6237\u540D 2-20 \u4F4D\uFF0C\u53EA\u80FD\u662F\u4E2D\u82F1\u6587/\u6570\u5B57/\u4E0B\u5212\u7EBF",400)}if(password.length<6)return text3("\u5BC6\u7801\u81F3\u5C11 6 \u4F4D",400);const existing=await getUser(env,username);if(existing)return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const salt=randomSaltHex();const passwordHash=await hashPassword(password,salt);const record={username,passwordHash,salt,role:isAdminUsername(env,username)?"admin":"user",createdAt:new Date().toISOString()};if(!await saveUser(env,record,username,true))return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/login"){await enforceRate(request,env,"login",10);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);const record=await getUser(env,username);if(!record)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);const ok=await verifyPassword(password,record.salt,record.passwordHash);if(!ok)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);if(isAdminUsername(env,record.username)&&record.role!=="admin"){record.role="admin";await saveUser(env,record,username)}const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/logout"){const token=parseCookies(request).session;if(token)await env.POSTS.delete(`session:${token}`);return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":clearSessionCookieHeader()}})}if(request.method==="POST"&&pathname==="/api/preview"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"preview",160,user);const body=await readJson(request,MAX_POST_REQUEST);const article=parseArticle(stringField(body.content,MAX_CONTENT,"\u6B63\u6587",false),true);const mentions=await getPublicAuthors(env,[...article.names].slice(0,100),false);return html(renderArticle(article,void 0,name=>mentionLink(name,mentions)))}if(request.method==="POST"&&pathname==="/api/posts"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"post",8,user);const fields=validatePost({description:"",content:"",tags:[],pubDate:new Date().toISOString().slice(0,10),...await readJson(request,MAX_POST_REQUEST)});const recipients=await mentionRecipients(env,articleMentionNames(fields.content));const base2=Array.from(slugify(fields.title)).slice(0,100).join("").replace(/-+$/,"");for(let attempt=0;attempt<2;attempt++){const slug=attempt||await getPost(env,base2)?base2+"-"+crypto.randomUUID().slice(0,8):base2;const data={...fields,slug,authorUsername:user.username,...(env.COMMENT_STORE?{commentThread:crypto.randomUUID()}:{})};if(await savePost(env,slug,data,true)){return json({slug,...await sendMentionNotices(env,user,recipients,data)})}}return text3("\u6682\u65F6\u65E0\u6CD5\u5206\u914D\u6587\u7AE0\u94FE\u63A5\uFF0C\u8BF7\u91CD\u8BD5\u3002",409)}m=pathname.match(/^\/api\/posts\/([^/]+)$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await enforceRate(request,env,"edit",16,user);const body=await readJson(request,MAX_POST_REQUEST);const data={...existing,...validatePost({...existing,...body})};const recipients=await mentionRecipients(env,articleMentionNames(data.content),existing.content);if(!await savePost(env,slug,data))return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);return json({slug,...await sendMentionNotices(env,user,recipients,data)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/delete$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await deletePost(env,existing);return json({ok:true})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const post=await getPost(env,slug);if(!post)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);const body=await readJson(request);await enforceRate(request,env,"comment",6,user);const content=stringField(body.content,1500,"\u8BC4\u8BBA");if(!content)return text3("\u8BC4\u8BBA\u4E0D\u80FD\u4E3A\u7A7A",400);const recipients=await mentionRecipients(env,[...plainMentions(content)].map(match=>match[1]));const comment={id:crypto.randomUUID(),authorUsername:user.username,content,createdAt:new Date().toISOString()};await addComment(env,post,comment);return json({ok:true,...await sendMentionNotices(env,user,recipients,post,comment.id)})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const commentId=decodeURIComponent(m[2]);const post=await getPost(env,slug);const ok=post&&await deleteComment(env,post,commentId,user);if(!ok)return text3("\u6CA1\u6709\u6743\u9650\u6216\u8BC4\u8BBA\u4E0D\u5B58\u5728",403);return json({ok:true})}return html(notFoundPage(user),404)}catch(err){if(err instanceof RequestError||err instanceof HydroJudgeError)return text3(err.message,err.status);if(err instanceof URIError)return text3("\u94FE\u63A5\u683C\u5F0F\u4E0D\u6B63\u786E\u3002",400);console.error(err);return text3("\u670D\u52A1\u5668\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u8BF7\u6C42\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",500)}}};function redirect(location){return new Response(null,{status:302,headers:{Location:location}})}function html(body,status=200){return new Response(body,{status,headers:{"Content-Type":"text/html; charset=UTF-8","Cache-Control":"private, no-store"}})}function json(obj,status=200){return new Response(JSON.stringify(obj),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}function text3(str,status=200){return new Response(str,{status,headers:{"Content-Type":"text/plain; charset=UTF-8"}})}export{worker_default as default};
+        return html(userProfilePage(username,page,accounts,user,social))}if(request.method==="GET"&&pathname==="/login"){const target=url.searchParams.get("next")||"";const next=/^\/problems\/[A-Z0-9]+$/.test(target)?target:"/";if(user)return redirect(next);return html(loginPage(next))}if(request.method==="GET"&&pathname==="/admin/users"){if(!user)return redirect("/login");if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const q=(url.searchParams.get("q")||"").slice(0,120);const allUsers=await listUsers(env);const filtered=q.trim()?searchUsers(allUsers,q):allUsers;return html(await adminUsersPage(filtered,q,user,env))}let m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(isAdminUsername(env,targetUsername)){return text3("\u8FD9\u4E2A\u8D26\u53F7\u662F\u73AF\u5883\u53D8\u91CF\u91CC\u914D\u7F6E\u7684\u6839\u7BA1\u7406\u5458\uFF0C\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403)}const body=await readJson(request);if(body.role!=="admin"&&body.role!=="user")return text3("\u89D2\u8272\u53C2\u6570\u4E0D\u5BF9",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);if(isAdminUsername(env,target.username))return text3("\u6839\u7BA1\u7406\u5458\u65E0\u6CD5\u901A\u8FC7\u9762\u677F\u4FEE\u6539",403);target.role=body.role;await saveUser(env,target,cleanUsername(targetUsername));return json({ok:true})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/tag$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!user.isRootAdmin)return text3("\u53EA\u6709\u6839\u7BA1\u7406\u5458\u53EF\u4EE5\u4FEE\u6539\u7BA1\u7406\u5458\u6807\u7B7E",403);let key;try{key=decodeURIComponent(m[1])}catch{return text3("\u8D26\u53F7\u53C2\u6570\u4E0D\u5BF9",400)}key=stringField(key,20,"\u8D26\u53F7");const{tag:value}=await readJson(request);const tag=stringField(value,ADMIN_TAG_MAX,"\u7BA1\u7406\u5458\u6807\u7B7E");if(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]/u.test(tag)){return text3("\u7BA1\u7406\u5458\u6807\u7B7E\u8BF7\u586B\u5199\u4E00\u884C\u53EF\u89C1\u6587\u5B57",400)}const target=await getUser(env,key);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);const account=publicAccount(env,key,target);if(account.role!=="admin")return text3("\u53EA\u53EF\u4EE5\u4E3A\u7BA1\u7406\u5458\u8BBE\u7F6E\u6807\u7B7E",400);if(tag)await env.POSTS.put(adminTagKey(key),JSON.stringify({createdAt:account.createdAt??null,tag}));else await env.POSTS.delete(adminTagKey(key));return json({ok:true,tag:tag||DEFAULT_ADMIN_TAG})}m=pathname.match(/^\/api\/admin\/users\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);if(!isAdminUsername(env,user.username))return text3("\u6CA1\u6709\u6743\u9650",403);const targetUsername=decodeURIComponent(m[1]);if(cleanUsername(targetUsername)===user.key||cleanUsername(targetUsername)===user.username)return text3("\u4E0D\u80FD\u5220\u9664\u81EA\u5DF1\u5F53\u524D\u767B\u5F55\u7684\u8D26\u53F7",400);const target=await getUser(env,targetUsername);if(!target)return text3("\u8D26\u53F7\u4E0D\u5B58\u5728",404);await deleteUser(env,targetUsername);return json({ok:true})}if(request.method==="GET"&&pathname==="/new"){if(!user)return redirect("/login");return html(editPage(null,true,user))}m=pathname.match(/^\/posts\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);const comments=await getComments(env,post);const visibleComments=user?comments:comments.slice(0,PUBLIC_COMMENT_LIMIT);const article=parseArticle(post.content||"");const names=new Set;for(const comment of visibleComments){for(const match of plainMentions(comment.content||""))names.add(match[1])}const[accounts,mentions]=await Promise.all([getPublicAuthors(env,[post.authorUsername,...visibleComments.map(comment=>comment.authorUsername)]),getPublicAuthors(env,[...names].slice(0,100),false)]);return html(postPage(post,user,comments,accounts,article,mentions))}m=pathname.match(/^\/edit\/([^/]+)\/?$/);if(request.method==="GET"&&m){const post=await getPost(env,decodeURIComponent(m[1]));if(!post)return html(notFoundPage(user),404);if(!user)return redirect("/login");if(!canEditPost(user,post))return text3("\u6CA1\u6709\u6743\u9650",403);const article=parseArticle(post.content||"",true);return html(editPage(post,false,user,article))}if(request.method==="GET"&&pathname==="/api/debug/admin-check"){const testUsername=url.searchParams.get("username")||"";const raw=env.ADMIN_USERNAMES||"";const parsed=raw.split(",").map(s=>cleanUsername(s)).filter(Boolean);return json({adminUsernamesConfigured:!!raw,rawLength:raw.length,parsedCount:parsed.length,testUsername,normalizedTestUsername:cleanUsername(testUsername),wouldBeAdmin:testUsername?isAdminUsername(env,testUsername):null})}if(request.method==="POST"&&pathname==="/api/auth/register"){await enforceRate(request,env,"register",4);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);if(!/^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/.test(username)){return text3("\u7528\u6237\u540D 2-20 \u4F4D\uFF0C\u53EA\u80FD\u662F\u4E2D\u82F1\u6587/\u6570\u5B57/\u4E0B\u5212\u7EBF",400)}if(password.length<6)return text3("\u5BC6\u7801\u81F3\u5C11 6 \u4F4D",400);const existing=await getUser(env,username);if(existing)return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const salt=randomSaltHex();const passwordHash=await hashPassword(password,salt);const record={username,passwordHash,salt,role:isAdminUsername(env,username)?"admin":"user",createdAt:new Date().toISOString()};if(!await saveUser(env,record,username,true))return text3("\u7528\u6237\u540D\u5DF2\u88AB\u5360\u7528",409);const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/login"){await enforceRate(request,env,"login",10);const body=await readJson(request);const username=stringField(body.username,20,"\u7528\u6237\u540D");const password=stringField(body.password,256,"\u5BC6\u7801",false);const record=await getUser(env,username);if(!record)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);const ok=await verifyPassword(password,record.salt,record.passwordHash);if(!ok)return text3("\u7528\u6237\u540D\u6216\u5BC6\u7801\u4E0D\u5BF9",403);if(isAdminUsername(env,record.username)&&record.role!=="admin"){record.role="admin";await saveUser(env,record,username)}const token=crypto.randomUUID();await env.POSTS.put(`session:${token}`,JSON.stringify({username:record.username,key:username,userCreated:record.createdAt}),{expirationTtl:SESSION_TTL_SECONDS});return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":sessionCookieHeader(token)}})}if(request.method==="POST"&&pathname==="/api/auth/logout"){const token=parseCookies(request).session;if(token)await env.POSTS.delete(`session:${token}`);return new Response(JSON.stringify({ok:true}),{status:200,headers:{"Content-Type":"application/json","Cache-Control":"no-store","Set-Cookie":clearSessionCookieHeader()}})}if(request.method==="POST"&&pathname==="/api/preview"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"preview",160,user);const body=await readJson(request,MAX_POST_REQUEST);const article=parseArticle(stringField(body.content,MAX_CONTENT,"\u6B63\u6587",false),true);return html(renderArticle(article))}if(request.method==="POST"&&pathname==="/api/posts"){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);await enforceRate(request,env,"post",8,user);const fields=validatePost({description:"",content:"",tags:[],pubDate:new Date().toISOString().slice(0,10),...await readJson(request,MAX_POST_REQUEST)});const base2=Array.from(slugify(fields.title)).slice(0,100).join("").replace(/-+$/,"");for(let attempt=0;attempt<2;attempt++){const slug=attempt||await getPost(env,base2)?base2+"-"+crypto.randomUUID().slice(0,8):base2;const data={...fields,slug,authorUsername:user.username,...(env.COMMENT_STORE?{commentThread:crypto.randomUUID()}:{})};if(await savePost(env,slug,data,true)){return json({slug})}}return text3("\u6682\u65F6\u65E0\u6CD5\u5206\u914D\u6587\u7AE0\u94FE\u63A5\uFF0C\u8BF7\u91CD\u8BD5\u3002",409)}m=pathname.match(/^\/api\/posts\/([^/]+)$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await enforceRate(request,env,"edit",16,user);const body=await readJson(request,MAX_POST_REQUEST);const data={...existing,...validatePost({...existing,...body})};if(!await savePost(env,slug,data))return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);return json({slug})}m=pathname.match(/^\/api\/posts\/([^/]+)\/delete$/);if(request.method==="POST"&&m){const slug=decodeURIComponent(m[1]);const existing=await getPost(env,slug);if(!existing)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);if(!canEditPost(user,existing))return text3("\u6CA1\u6709\u6743\u9650",403);await deletePost(env,existing);return json({ok:true})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const post=await getPost(env,slug);if(!post)return text3("\u5E16\u5B50\u4E0D\u5B58\u5728",404);const body=await readJson(request);await enforceRate(request,env,"comment",6,user);const content=stringField(body.content,1500,"\u8BC4\u8BBA");if(!content)return text3("\u8BC4\u8BBA\u4E0D\u80FD\u4E3A\u7A7A",400);const recipients=await mentionRecipients(env,[...plainMentions(content)].map(match=>match[1]));const comment={id:crypto.randomUUID(),authorUsername:user.username,content,createdAt:new Date().toISOString()};await addComment(env,post,comment);return json({ok:true,...await sendMentionNotices(env,user,recipients,{slug:post.slug,title:post.title,commentId:comment.id})})}m=pathname.match(/^\/api\/posts\/([^/]+)\/comments\/([^/]+)\/delete$/);if(request.method==="POST"&&m){if(!user)return text3("\u8BF7\u5148\u767B\u5F55",401);const slug=decodeURIComponent(m[1]);const commentId=decodeURIComponent(m[2]);const post=await getPost(env,slug);const ok=post&&await deleteComment(env,post,commentId,user);if(!ok)return text3("\u6CA1\u6709\u6743\u9650\u6216\u8BC4\u8BBA\u4E0D\u5B58\u5728",403);return json({ok:true})}return html(notFoundPage(user),404)}catch(err){if(err instanceof RequestError||err instanceof HydroJudgeError)return text3(err.message,err.status);if(err instanceof URIError)return text3("\u94FE\u63A5\u683C\u5F0F\u4E0D\u6B63\u786E\u3002",400);console.error(err);return text3("\u670D\u52A1\u5668\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u8BF7\u6C42\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",500)}}};function redirect(location){return new Response(null,{status:302,headers:{Location:location}})}function html(body,status=200){return new Response(body,{status,headers:{"Content-Type":"text/html; charset=UTF-8","Cache-Control":"private, no-store"}})}function json(obj,status=200){return new Response(JSON.stringify(obj),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}})}function text3(str,status=200){return new Response(str,{status,headers:{"Content-Type":"text/plain; charset=UTF-8"}})}export{worker_default as default};

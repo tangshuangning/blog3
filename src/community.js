@@ -1,4 +1,9 @@
+import { markdownToolbar, markdownDialogs, markdownToolbarScript } from "./markdown-editor.js";
+
 const PAGE_SIZE = 20;
+const ACTIVITY_REPLY_PAGE_SIZE = 6;
+const MAX_ACTIVITY_BODY = 1_500_000;
+const MAX_ACTIVITY_FORM = 5_000_000;
 const USERNAME = /^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$/;
 const RECORD_ID = /^[a-f0-9]{24}$/;
 const RECEIPT = /^[a-f0-9]{24}\.[A-Za-z0-9_-]{43}$/;
@@ -98,8 +103,16 @@ function pageNumber(value) {
   return Number.isSafeInteger(page) && page >= 1 ? Math.min(500, page) : 1;
 }
 
-function paginate(rows) {
-  return { rows: rows.slice(0, PAGE_SIZE), more: rows.length > PAGE_SIZE };
+function paginate(rows, limit = PAGE_SIZE) {
+  return { rows: rows.slice(0, limit), more: rows.length > limit };
+}
+
+function activityMarkdown(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new CommunityError('请填写正文。');
+  if (value.length > MAX_ACTIVITY_BODY || new TextEncoder().encode(value).byteLength > MAX_ACTIVITY_BODY) {
+    throw new CommunityError('正文或图片过大，请缩小图片或改用图片链接。', 413);
+  }
+  return value;
 }
 
 export class CommunityStore {
@@ -152,7 +165,8 @@ export class CommunityStore {
       case 'feed': {
         const viewer = actor?.id ?? '';
         const following = Boolean(args.following && actor);
-        const entries = this.rows(`SELECT a.*,
+        const entries = this.rows(`SELECT a.id, a.author, a.name, a.at,
+          CASE WHEN length(CAST(a.body AS BLOB)) <= 48000 THEN a.body ELSE null END AS body,
           (SELECT count(*) FROM activity_likes WHERE activity = a.id) AS likes,
           EXISTS(SELECT 1 FROM activity_likes WHERE activity = a.id AND actor = ?) AS liked,
           (SELECT count(*) FROM activity_replies WHERE activity = a.id) AS replies
@@ -167,7 +181,16 @@ export class CommunityStore {
           EXISTS(SELECT 1 FROM activity_likes WHERE activity = a.id AND actor = ?) AS liked FROM activity a WHERE id = ?`,
           actor?.id ?? '', id);
         if (!activity) throw new CommunityError('这条犇犇已不存在。', 404);
-        return { activity, ...paginate(this.rows('SELECT * FROM activity_replies WHERE activity = ? ORDER BY id LIMIT ? OFFSET ?', id, PAGE_SIZE + 1, offset)) };
+        let page = pageNumber(args.page);
+        if (args.reply && this.row('SELECT 1 FROM activity_replies WHERE activity = ? AND id = ?', id, args.reply)) {
+          const { count } = this.row('SELECT count(*) AS count FROM activity_replies WHERE activity = ? AND id <= ?', id, args.reply);
+          page = pageNumber(Math.ceil(count / ACTIVITY_REPLY_PAGE_SIZE));
+        }
+        const replyOffset = (page - 1) * ACTIVITY_REPLY_PAGE_SIZE;
+        return { activity, page, ...paginate(this.rows(
+          'SELECT * FROM activity_replies WHERE activity = ? ORDER BY id LIMIT ? OFFSET ?',
+          id, ACTIVITY_REPLY_PAGE_SIZE + 1, replyOffset,
+        ), ACTIVITY_REPLY_PAGE_SIZE) };
       }
       case 'profile': {
         const id = target.id;
@@ -197,7 +220,7 @@ export class CommunityStore {
     switch (action) {
       case 'post-activity':
         return this.row('INSERT INTO activity (author, name, body, at) VALUES (?, ?, ?, ?) RETURNING id',
-          id, name, input(args.body, 500, '动态'), now);
+          id, name, activityMarkdown(args.body), now);
       case 'follow':
         if (!target || id === target.id) throw new CommunityError('请选择其他用户。');
         if (args.enabled) this.sql.exec('INSERT OR IGNORE INTO follows (actor, target) VALUES (?, ?)', id, target.id);
@@ -213,9 +236,8 @@ export class CommunityStore {
       case 'reply-activity': {
         const activity = itemId(args.id);
         if (!this.row('SELECT id FROM activity WHERE id = ?', activity)) throw new CommunityError('这条犇犇已不存在。', 404);
-        this.sql.exec('INSERT INTO activity_replies (activity, author, name, body, at) VALUES (?, ?, ?, ?, ?)',
-          activity, id, name, input(args.body, 500, '回复'), now);
-        return {};
+        return this.row('INSERT INTO activity_replies (activity, author, name, body, at) VALUES (?, ?, ?, ?, ?) RETURNING id',
+          activity, id, name, activityMarkdown(args.body), now);
       }
       case 'delete-activity':
         return this.remove('activity', itemId(args.id), actor);
@@ -420,7 +442,17 @@ function actionForm(url, text, enabled) {
   </form>`;
 }
 
-function writeForm(url, text, label, length) {
+function writeForm(url, text, label, length, markdown = false) {
+  if (markdown) {
+    return `<form method="post" action="${htmlEscape(url)}" class="community-compose community-markdown-compose">
+      <label for="content-input">${label}（Markdown）</label>
+      ${markdownToolbar}
+      <textarea id="content-input" name="body" data-mention-picker required maxlength="${length}" rows="5"
+        wrap="soft" placeholder="支持公式、表格、代码块和 @用户名"></textarea>
+      ${markdownDialogs}
+      <button type="submit" class="community-button">${text}</button>
+    </form><script>${markdownToolbarScript}</script>`;
+  }
   return `<form method="post" action="${htmlEscape(url)}" class="community-compose">
     <label>${label}<textarea name="body" required maxlength="${length}" rows="3"></textarea></label>
     <button type="submit" class="community-button">${text}</button>
@@ -431,16 +463,34 @@ async function namesFor(env, rows, tools) {
   return tools.getPublicAuthors(env, rows.map(row => row.name));
 }
 
+async function markdownFor(env, rows, tools) {
+  const articles = new Map();
+  const names = new Set();
+  for (const row of rows) {
+    if (row.body === null) continue;
+    const article = tools.parseArticle(row.body);
+    articles.set(row, article);
+    for (const name of article.names) names.add(name);
+  }
+  const mentions = new Map();
+  const usernames = [...names];
+  for (let index = 0; index < usernames.length; index += 50) {
+    const batch = await tools.getPublicAuthors(env, usernames.slice(index, index + 50), false);
+    for (const [name, account] of batch) mentions.set(name, account);
+  }
+  return (row) => tools.renderArticle(articles.get(row), undefined, name => tools.mentionLink(name, mentions));
+}
+
 function postByline(row, accounts, tools) {
   return `<div class="community-byline">${tools.authorName(row.name, accounts)}${date(row.at)}</div>`;
 }
 
-function feedCard(row, accounts, tools, actor, individual = false) {
+function feedCard(row, accounts, tools, actor, markdown, individual = false) {
   const path = activityPath(row.id);
   const returnTo = individual ? '?thread=1' : '';
   return `<article class="community-card">
     ${postByline(row, accounts, tools)}
-    <p class="community-text">${htmlEscape(row.body)}</p>
+    ${row.body === null ? `<p><a href="${path}">查看动态全文</a></p>` : `<div class="community-markdown prose">${markdown(row)}</div>`}
     <div class="community-actions">
       ${individual ? '' : `<a href="${path}">回复 <span>${row.replies}</span></a>`}
       ${actor ? actionForm(path + '/like' + returnTo, (row.liked ? '已赞 ' : '赞 ') + row.likes, !row.liked) : `<span>${row.likes} 赞</span>`}
@@ -449,8 +499,8 @@ function feedCard(row, accounts, tools, actor, individual = false) {
   </article>`;
 }
 
-function communityPage(tools, user, title, active, body, aside = '') {
-  return tools.html(tools.layout({ user, title, active, community: true, body: `
+function communityPage(tools, user, title, active, body, aside = '', markdown = false) {
+  return tools.html(tools.layout({ user, title, active, community: true, math: markdown, mentionPicker: markdown && Boolean(user), body: `
     <div class="community-layout${aside ? ' has-aside' : ''}">
       <div class="community-main">${body}</div>${aside ? `<aside class="community-sidebar">${aside}</aside>` : ''}
     </div>` }));
@@ -467,7 +517,7 @@ function loginLine(action) {
 async function renderFeed(env, user, actor, url, page, tools) {
   const following = Boolean(actor && url.searchParams.get('view') === 'following');
   const data = await callStore(env, 'social', 'feed', { actor, following, page });
-  const accounts = await namesFor(env, data.rows, tools);
+  const [accounts, markdown] = await Promise.all([namesFor(env, data.rows, tools), markdownFor(env, data.rows, tools)]);
   const path = following ? '/?view=following' : '/';
   const tabs = `<nav class="community-tabs" aria-label="动态筛选">
     ${selected(!following, '/', '全站动态')}${actor ? selected(following, '/?view=following', '我关注的') : ''}
@@ -479,29 +529,36 @@ async function renderFeed(env, user, actor, url, page, tools) {
   </div>`;
   const empty = following ? '还没有关注用户的动态。' : '还没有犇犇，来发第一条动态吧。';
   return communityPage(tools, user, '犇犇', 'home', [
-    heading('犇犇'), tabs,
-    actor ? `<section class="community-card">${writeForm('/benben', '发布犇犇', '说点什么', 500)}</section>` : loginLine('发布犇犇'),
-    data.rows.length ? data.rows.map(row => feedCard(row, accounts, tools, actor)).join('') : `<div class="community-card community-empty">${empty}</div>`,
+    heading('犇犇'), tabs, mentionStatus(url),
+    actor ? `<section class="community-card">${writeForm('/benben', '发布犇犇', '说点什么', MAX_ACTIVITY_BODY, true)}</section>` : loginLine('发布犇犇'),
+    data.rows.length ? data.rows.map(row => feedCard(row, accounts, tools, actor, markdown)).join('') : `<div class="community-card community-empty">${empty}</div>`,
     pageLinks(path, page, data.more),
-  ].join(''), aside);
+  ].join(''), aside, true);
 }
 
-function renderReplies(rows, accounts, tools, empty = '还没有回复。') {
-  if (!rows.length) return `<p class="community-empty">${empty}</p>`;
-  return rows.map(row => `<article class="community-reply">${postByline(row, accounts, tools)}
-    <p class="community-text">${htmlEscape(row.body)}</p></article>`).join('');
+function renderReplies(rows, accounts, tools, markdown) {
+  if (!rows.length) return '<p class="community-empty">还没有回复。</p>';
+  return rows.map(row => `<article class="community-reply"${markdown ? ` id="reply-${row.id}"` : ''}>${postByline(row, accounts, tools)}
+    ${markdown ? `<div class="community-markdown prose">${markdown(row)}</div>` : `<p class="community-text">${htmlEscape(row.body)}</p>`}</article>`).join('');
 }
 
-async function renderActivity(env, user, actor, id, page, tools) {
-  const data = await callStore(env, 'social', 'activity', { actor, id, page });
-  const accounts = await namesFor(env, [data.activity, ...data.rows], tools);
+function mentionStatus(url) {
+  return url.searchParams.get('mention') === 'retry'
+    ? '<p role="status" class="community-card">内容已发布，部分 @ 提醒发送失败。</p>' : '';
+}
+
+async function renderActivity(env, user, actor, id, url, page, tools) {
+  const reply = Number(url.searchParams.get('reply'));
+  const data = await callStore(env, 'social', 'activity', { actor, id, page, reply: Number.isSafeInteger(reply) && reply > 0 ? reply : null });
+  const rows = [data.activity, ...data.rows];
+  const [accounts, markdown] = await Promise.all([namesFor(env, rows, tools), markdownFor(env, rows, tools)]);
   return communityPage(tools, user, '犇犇详情', 'home', [
-    heading('犇犇详情', '<a href="/">返回全站动态</a>'),
-    feedCard(data.activity, accounts, tools, actor, true),
-    `<section class="community-card"><h2>回复</h2>${renderReplies(data.rows, accounts, tools)}
-      ${pageLinks(activityPath(id), page, data.more)}
-      ${actor ? writeForm(activityPath(id) + '/reply', '回复', '写回复', 500) : loginLine('回复')}</section>`,
-  ].join(''));
+    heading('犇犇详情', '<a href="/">返回全站动态</a>'), mentionStatus(url),
+    feedCard(data.activity, accounts, tools, actor, markdown, true),
+    `<section class="community-card"><h2>回复</h2>${renderReplies(data.rows, accounts, tools, markdown)}
+      ${pageLinks(activityPath(id), data.page, data.more)}
+      ${actor ? writeForm(activityPath(id) + '/reply', '回复', '写回复', MAX_ACTIVITY_BODY, true) : loginLine('回复')}</section>`,
+  ].join(''), '', true);
 }
 
 async function renderForums(env, user, actor, url, page, tools) {
@@ -606,17 +663,39 @@ async function renderMembers(env, user, url, tools) {
     </section>`);
 }
 
-async function renderMessages(env, user, actor, name, page, tools) {
+async function renderMessages(env, user, actor, name, page, url, tools) {
   if (!actor) return tools.redirect('/login');
   if (!name) {
-    const { rows, more } = await callStore(env, 'messages', 'inbox', { actor, page });
-    return communityPage(tools, user, '私信', 'messages', heading('私信', '<a href="/members">查找联系人</a>') + `
+    const query = (url.searchParams.get('q') || '').trim().slice(0, 20);
+    const valid = /^[a-zA-Z0-9_\u4e00-\u9fa5]{1,20}$/.test(query);
+    const [{ rows, more }, matches] = await Promise.all([
+      callStore(env, 'messages', 'inbox', { actor, page }),
+      valid ? tools.findMentionUsernames(env, query) : [],
+    ]);
+    const names = matches.filter(name => name !== actor.name);
+    const accounts = await tools.getPublicAuthors(env, names);
+    const results = names.map(name => `<li>
+      ${tools.authorName(name, accounts)}
+      <a class="community-button community-button-quiet" href="${chatPath(name)}" aria-label="给 ${htmlEscape(name)} 发私信">发私信</a>
+    </li>`).join('');
+    const search = `<section class="community-card">
+      <h2>找联系人</h2>
+      <form class="community-search" action="/messages" method="get">
+        <input name="q" type="search" aria-label="搜索用户名" maxlength="20" placeholder="输入用户名" value="${htmlEscape(query)}">
+        <button type="submit" class="community-button">搜索</button>
+      </form>
+      ${query ? (results ? `<ul class="community-contact-results" aria-label="搜索结果">${results}</ul>`
+        : '<p class="community-empty">没有找到匹配的其他用户。</p>') : ''}
+    </section>`;
+    const inboxUrl = '/messages' + (query ? '?q=' + encodeURIComponent(query) : '');
+    return communityPage(tools, user, '私信', 'messages', heading('私信') + search + `
       <section class="community-card community-topic-list">
+        <h2 class="community-inbox-title">最近会话</h2>
         ${rows.map(row => `<a class="community-conversation" href="${chatPath(row.name)}">
           <strong>${htmlEscape(row.name)}</strong>${date(row.at)}
           <span>${htmlEscape(row.body.slice(0, 100))}</span>
-        </a>`).join('') || '<p class="community-empty">还没有私信。可以在对方主页发起私信。</p>'}
-      </section>${pageLinks('/messages', page, more)}`);
+        </a>`).join('') || '<p class="community-empty">还没有私信。</p>'}
+      </section>${pageLinks(inboxUrl, page, more)}`);
   }
   const target = await targetAccount(env, name, tools);
   const { rows, more } = await callStore(env, 'messages', 'thread', { actor, target, page });
@@ -692,11 +771,11 @@ async function renderRecords(env, user, actor, id, rid, page, tools) {
     </section>${pageLinks(path, page, data.more)}`);
 }
 
-async function readForm(request) {
+async function readForm(request, limit = 65536) {
   if (!request.headers.get('Content-Type')?.startsWith('application/x-www-form-urlencoded')) {
     throw new CommunityError('表单格式不正确。', 415);
   }
-  if (Number(request.headers.get('Content-Length')) > 65536) throw new CommunityError('内容太长。', 413);
+  if (Number(request.headers.get('Content-Length')) > limit) throw new CommunityError('内容太长。', 413);
   const reader = request.body?.getReader();
   const decoder = new TextDecoder();
   let message = '';
@@ -705,7 +784,7 @@ async function readForm(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 65536) {
+    if (size > limit) {
       await reader.cancel();
       throw new CommunityError('内容太长。', 413);
     }
@@ -721,19 +800,31 @@ async function postCommunity(request, env, user, actor, path, url, tools) {
   const chat = /^\/messages\/([^/]+)$/.exec(path);
   if (!activity && !topic && !follow && !chat && path !== '/benben' && path !== '/discuss/new') return null;
   if (!actor) return tools.redirect('/login');
-  const form = await readForm(request);
+  const isMarkdown = path === '/benben' || activity?.[2] === 'reply';
+  const form = await readForm(request, isMarkdown ? MAX_ACTIVITY_FORM : undefined);
   const body = form.get('body');
   const enabled = form.get('enabled') === '1';
   await tools.enforceRate(request, env, chat ? 'private-message' : 'community-post', chat ? 20 : 40, user);
   if (path === '/benben') {
-    await callStore(env, 'social', 'post-activity', { actor, body });
-    return tools.redirect('/');
+    const markdown = activityMarkdown(body);
+    const recipients = await tools.mentionRecipients(env, markdown.includes('@') ? tools.parseArticle(markdown).names : []);
+    const { id } = await callStore(env, 'social', 'post-activity', { actor, body: markdown });
+    const { mentionDeliveryFailed } = await tools.sendMentionNotices(env, user, recipients, { activityId: id, title: '犇犇动态' });
+    return tools.redirect(mentionDeliveryFailed ? '/?mention=retry' : '/');
   }
   if (activity) {
     const [, id, verb] = activity;
+    if (verb === 'reply') {
+      const markdown = activityMarkdown(body);
+      const recipients = await tools.mentionRecipients(env, markdown.includes('@') ? tools.parseArticle(markdown).names : []);
+      const { id: replyId } = await callStore(env, 'social', 'reply-activity', { actor, id, body: markdown });
+      const target = { activityId: itemId(id), replyId, title: '犇犇回复' };
+      const { mentionDeliveryFailed } = await tools.sendMentionNotices(env, user, recipients, target);
+      return tools.redirect(activityPath(id) + '?reply=' + replyId + (mentionDeliveryFailed ? '&mention=retry' : '') + '#reply-' + replyId);
+    }
     const action = verb === 'like' ? verb : verb + '-activity';
     await callStore(env, 'social', action, { actor, id, body, enabled });
-    return tools.redirect(verb === 'reply' || (verb === 'like' && url.searchParams.get('thread') === '1') ? activityPath(id) : '/');
+    return tools.redirect(verb === 'like' && url.searchParams.get('thread') === '1' ? activityPath(id) : '/');
   }
   if (follow) {
     const target = await targetAccount(env, decodeURIComponent(follow[1]), tools);
@@ -767,11 +858,11 @@ export async function communityRoute(request, env, user, tools) {
     if (path === '/discuss/new') return actor ? renderNewTopic(tools, user, actor, url.searchParams.get('board')) : tools.redirect('/login');
     if (path === '/members') return await renderMembers(env, user, url, tools);
     const activity = /^\/benben\/(\d+)$/.exec(path);
-    if (activity) return await renderActivity(env, user, actor, activity[1], page, tools);
+    if (activity) return await renderActivity(env, user, actor, activity[1], url, page, tools);
     const topic = /^\/discuss\/(\d+)$/.exec(path);
     if (topic) return await renderTopic(env, user, actor, topic[1], page, tools);
     const chat = /^\/messages(?:\/([^/]+))?$/.exec(path);
-    if (chat) return await renderMessages(env, user, actor, chat[1] && decodeURIComponent(chat[1]), page, tools);
+    if (chat) return await renderMessages(env, user, actor, chat[1] && decodeURIComponent(chat[1]), page, url, tools);
     const records = /^\/problems\/([A-Z0-9]+)\/records(?:\/([a-z0-9]+))?$/i.exec(path);
     if (records) {
       if (records[2] && !RECORD_ID.test(records[2])) throw new CommunityError('提交记录不存在。', 404);
@@ -788,26 +879,43 @@ export async function communityRoute(request, env, user, tools) {
 }
 
 export const communityCss = `
-.community-layout{max-width:960px;margin:38px auto 76px;display:grid;gap:22px}
+.community-layout{max-width:960px;margin:38px auto 76px;display:grid;gap:22px;color:var(--night-text)}
 .community-layout.has-aside{grid-template-columns:minmax(0,1fr) 220px}
 .community-main{min-width:0;display:grid;gap:14px;align-content:start}
-.community-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.community-heading,.community-tabs,.community-pages,.community-trail{
+  color:var(--night-text);background:var(--night-panel);border:1px solid #4e6a82;border-radius:10px;
+}
+.community-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;padding:13px 17px}
 .community-heading h1{font-size:clamp(1.65rem,4.6vw,2.6rem);line-height:1.18;margin:0;overflow-wrap:anywhere}
+.community-heading>a,.community-tabs a,.community-pages a,.community-trail a{
+  color:#aff4f8;text-underline-offset:.24em;
+}
 .community-heading>a{white-space:nowrap}
+.community-layout :focus-visible,.community-profile :focus-visible{outline-color:var(--blue)}
 .community-card{min-width:0;border:1px solid color-mix(in srgb,var(--ink) 24%,transparent);background:var(--paper);
-  border-radius:12px;padding:17px 19px;box-shadow:0 3px 0 color-mix(in srgb,var(--ink) 9%,transparent)}
+  color:var(--ink);border-radius:12px;padding:17px 19px;box-shadow:0 3px 0 color-mix(in srgb,var(--ink) 9%,transparent)}
 .community-card h2{font-size:1.02rem;margin:0 0 12px}
 .community-sidebar-card{display:grid;gap:5px}
 .community-sidebar-card h2{margin:0 0 6px}
 .community-sidebar-card a{border-radius:6px;padding:7px 8px;text-decoration:none}
 .community-sidebar-card a:hover{background:var(--paper-alt)}
 .community-tabs,.community-actions,.community-byline,.community-pages{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
-.community-tabs{border-bottom:1px solid color-mix(in srgb,var(--ink) 21%,transparent)}
+.community-tabs{padding:0 10px}
 .community-tabs a{font-weight:700;text-decoration:none;border-bottom:2px solid transparent;padding:9px 6px}
-.community-tabs a[aria-current=page]{border-color:var(--blue);color:var(--ink)}
+.community-tabs a[aria-current=page]{border-color:var(--neon);color:var(--night-text)}
 .community-byline{gap:5px 12px;font-size:.88rem}
 .community-byline time,.community-conversation time,.community-reply-count,.community-empty{color:var(--gray)}
 .community-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.66;margin:10px 0}
+.community-markdown{min-width:0;overflow-wrap:anywhere;margin:12px 0}
+.community-markdown>:first-child{margin-top:0}
+.community-markdown>:last-child{margin-bottom:0}
+.community-markdown img{max-width:100%;height:auto}
+.community-markdown-compose .editor-toolbar{overflow:visible;flex-wrap:wrap}
+.community-markdown-compose #content-input{
+  position:static;inset:auto;height:auto;min-height:110px;resize:vertical;
+  background:var(--paper-alt);border:1px solid #a0afa9;border-radius:7px;
+}
+.community-reply:target{outline:2px solid var(--link);outline-offset:4px;scroll-margin-top:104px}
 .community-actions{font-size:.85rem}
 .community-action{display:inline;margin:0}
 .community-compose{display:grid;gap:9px}
@@ -823,8 +931,13 @@ export const communityCss = `
   cursor:pointer;font:inherit;font-weight:700;text-decoration:none}
 .community-button:hover{border-color:var(--blue)}
 .community-button-quiet{background:transparent;font-size:.84rem}
-.community-pages{justify-content:center;margin:7px 0}
-.community-pages span,.community-trail{color:var(--gray);font-size:.88rem}
+.community-heading .community-button,.community-profile .community-button{
+  background:#17384a;color:#d3f8fa;border-color:#5c8196;
+}
+.community-heading .community-button:hover,.community-profile .community-button:hover{border-color:var(--neon)}
+.community-pages{justify-content:center;margin:7px 0;padding:7px 10px}
+.community-pages span,.community-trail{color:var(--night-muted);font-size:.88rem}
+.community-trail{padding:8px 12px}
 .community-topic-list{padding-block:6px}
 .community-topic,.community-conversation{display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:12px 0;border-bottom:1px solid color-mix(in srgb,var(--ink) 17%,transparent)}
@@ -838,6 +951,10 @@ export const communityCss = `
 .community-reply:last-of-type{margin-bottom:12px}
 .community-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .community-member-list{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0;list-style:none}
+.community-contact-results{margin:10px 0 0;padding:0;list-style:none}
+.community-contact-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #c6cdc9}
+.community-contact-results li:last-child{border-bottom:0}
+.community-topic-list .community-inbox-title{margin:10px 0 4px}
 .community-conversation{display:grid;grid-template-columns:minmax(0,1fr) auto;text-decoration:none;overflow-wrap:anywhere}
 .community-conversation span{grid-column:1/-1}
 .community-chat{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:13px}
@@ -855,9 +972,10 @@ export const communityCss = `
 .community-record-stats dt{color:var(--gray);font-size:.82rem}
 .community-record-stats dd{margin:2px 0 0;font-weight:700}
 .community-code{max-width:100%;overflow:auto;margin:0;padding:13px;border-radius:7px;background:#141d27;color:#edf5ff}
-.community-profile{margin-top:12px}
+.community-profile{margin-top:12px;color:var(--night-text)}
 @media(max-width:760px){
   .community-layout,.community-layout.has-aside{grid-template-columns:minmax(0,1fr);margin-top:24px}
   .community-card{padding:13px 12px}
+  .community-heading{padding:12px}
 }
 `;
