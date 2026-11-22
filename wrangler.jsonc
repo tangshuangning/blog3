@@ -16,6 +16,10 @@
       {
         "name": "COMMENT_STORE",
         "class_name": "CommentStore"
+      },
+      {
+        "name": "COMMUNITY_STORE",
+        "class_name": "CommunityStore"
       }
     ]
   },
@@ -23,6 +27,10 @@
     {
       "tag": "comment-store-v1",
       "new_sqlite_classes": ["CommentStore"]
+    },
+    {
+      "tag": "community-store-v1",
+      "new_sqlite_classes": ["CommunityStore"]
     }
   ],
 
