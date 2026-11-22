@@ -342,6 +342,34 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
 .problem-judge-result { margin-top: 14px; padding: 12px; border: 1px solid #b8c3c4; border-radius: 6px; }
 .problem-judge-result > p { margin: 0 0 6px; }
 .problem-judge-result pre { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.judge-cases { margin: 14px 0; }
+.judge-cases h3 { margin: 0 0 8px; font-size: .95rem; }
+.judge-case-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.judge-case {
+  --case-accent: #78859a;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--case-accent) 58%, var(--paper));
+  border-top: 3px solid var(--case-accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--case-accent) 9%, var(--paper));
+}
+.judge-case[data-status="1"] { --case-accent: #21926e; }
+.judge-case[data-status="2"], .judge-case[data-status="6"] { --case-accent: #d45660; }
+.judge-case[data-status="3"], .judge-case[data-status="4"], .judge-case[data-status="5"] { --case-accent: #cc882f; }
+.judge-case[data-status="7"], .judge-case[data-status="8"], .judge-case[data-status="31"] { --case-accent: #9070c8; }
+.judge-case strong { font-size: .98rem; }
+.judge-case-number, .judge-case-metrics { font: .75rem/1.35 var(--font-mono); }
+.judge-case-metrics { overflow-wrap: anywhere; }
 @media (max-width: 480px) { .problem-samples { grid-template-columns: 1fr; } }
 `;var problemJudgeScript=String.raw`(() => {
   const form = document.getElementById('problem-judge-form');
@@ -349,9 +377,40 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
   const verdict = result.querySelector('[role="status"]');
   const metrics = result.querySelector('.judge-metrics');
   const diagnostics = result.querySelector('pre');
+  const caseSection = result.querySelector('.judge-cases');
+  const caseList = caseSection.querySelector('.judge-case-list');
   const refresh = result.querySelector('button');
   let receipt = new URL(location.href).searchParams.get('submission');
   let timer, version = 0, pollingUntil = 0;
+
+  function renderCases(cases) {
+    caseList.replaceChildren();
+    caseSection.hidden = !Array.isArray(cases) || !cases.length;
+    if (caseSection.hidden) return;
+    const grouped = new Set(cases.map(test => test.subtaskId)).size > 1;
+    const entries = document.createDocumentFragment();
+    for (const test of cases) {
+      const card = document.createElement('li');
+      card.className = 'judge-case';
+      card.dataset.status = test.status;
+      const number = document.createElement('span');
+      number.className = 'judge-case-number';
+      number.textContent = (grouped && test.subtaskId ? '子任务 ' + test.subtaskId + ' / ' : '') + '#' + test.id;
+      const status = document.createElement('strong');
+      status.textContent = test.verdict.split(' · ')[0];
+      status.title = test.verdict;
+      const usage = document.createElement('span');
+      usage.className = 'judge-case-metrics';
+      usage.textContent = [
+        test.timeMs === null ? '' : Number(test.timeMs.toFixed(2)) + ' ms',
+        test.memoryKiB === null ? '' : test.memoryKiB + ' KiB',
+      ].filter(Boolean).join(' · ');
+      card.append(number, status);
+      if (usage.textContent) card.append(usage);
+      entries.append(card);
+    }
+    caseList.append(entries);
+  }
 
   async function checkStatus() {
     clearTimeout(timer);
@@ -377,6 +436,7 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
       metrics.hidden = !metrics.textContent;
       diagnostics.textContent = data.diagnostics;
       diagnostics.hidden = !data.diagnostics;
+      renderCases(data.cases);
       refresh.hidden = !data.pending;
       if (data.pending && Date.now() < pollingUntil) timer = setTimeout(checkStatus, document.hidden ? 12000 : 3000);
     } catch {
@@ -390,6 +450,7 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
     pollingUntil = Date.now() + 120000;
     verdict.textContent = '正在查询评测结果…';
     metrics.hidden = diagnostics.hidden = true;
+    renderCases([]);
     refresh.hidden = false;
     checkStatus();
   }
@@ -414,7 +475,7 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
   });
   refresh.addEventListener('click', trackSubmission);
   if (receipt) trackSubmission();
-})();`;var MAX_SOURCE_LENGTH=32768;var recordId=/^[0-9a-f]{24}$/;var encoder=new TextEncoder;var HydroJudgeError=class extends Error{constructor(message,status=502){super(message);this.status=status}};function hydroSettings(env){const{HYDRO_BASE_URL,HYDRO_TOKEN,HYDRO_RECEIPT_KEY,HYDRO_DOMAIN}=env;const language=env.HYDRO_CPP17_LANG||"cc.cc17o2";if(!HYDRO_BASE_URL||!/^[\w-]{24,128}$/.test(HYDRO_TOKEN||"")||!/^[0-9a-f]{64}$/i.test(HYDRO_RECEIPT_KEY||"")||!/^[a-z0-9_.-]{1,40}$/i.test(language)||HYDRO_DOMAIN&&!/^[a-z0-9_-]{1,64}$/i.test(HYDRO_DOMAIN))return null;let base2;try{base2=new URL(HYDRO_BASE_URL)}catch{return null}if(base2.protocol!=="https:"||base2.pathname!=="/"||base2.username||base2.password||base2.search||base2.hash)return null;const domainPath=HYDRO_DOMAIN?`d/${HYDRO_DOMAIN}/`:"";return{url:new URL(domainPath,base2).href,token:HYDRO_TOKEN,secret:HYDRO_RECEIPT_KEY,language}}async function hydroRequest(settings,path2,payload){let response;try{response=await fetch(new URL(path2,settings.url),{method:payload?"POST":"GET",headers:{Accept:"application/json",Authorization:"Bearer "+settings.token,...payload?{"Content-Type":"application/json"}:{}},body:payload?JSON.stringify(payload):void 0,cache:"no-store",redirect:"manual",signal:AbortSignal.timeout(12e3)})}catch{throw new HydroJudgeError(payload?"\u8BC4\u6D4B\u670D\u52A1\u6682\u672A\u786E\u8BA4\u6536\u5230\u63D0\u4EA4\u3002":"\u6682\u65F6\u65E0\u6CD5\u67E5\u8BE2\u8BC4\u6D4B\u7ED3\u679C\u3002")}if(response.status===429)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u7E41\u5FD9\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",503);if(!response.ok)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u6B64\u8BF7\u6C42\u3002");let data;try{data=await response.json()}catch{throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u8FD4\u56DE\u4E86\u65E0\u6548\u7ED3\u679C\u3002")}if(!data||typeof data!=="object"||data.error)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u8FD4\u56DE\u4E86\u65E0\u6548\u7ED3\u679C\u3002");return data}function receiptKey(settings){const bytes=Uint8Array.from(settings.secret.match(/../g),byte=>parseInt(byte,16));return crypto.subtle.importKey("raw",bytes,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"])}function receiptData(settings,user,problemId,rid){return encoder.encode(JSON.stringify(["blog-hydro-v1",settings.url,user.key,user.createdAt||"",problemId,rid]))}async function submitToHydro(settings,user,problemId,code2){const key=await receiptKey(settings);const{rid}=await hydroRequest(settings,`p/${encodeURIComponent(problemId)}/submit`,{lang:settings.language,code:code2});if(typeof rid!=="string"||!recordId.test(rid))throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u672A\u8FD4\u56DE\u6709\u6548\u7684\u63D0\u4EA4\u7F16\u53F7\u3002");const signature=await crypto.subtle.sign("HMAC",key,receiptData(settings,user,problemId,rid));return rid+"."+btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}var statuses={0:"\u7B49\u5F85\u8BC4\u6D4B",1:"AC \xB7 \u7B54\u6848\u6B63\u786E",2:"WA \xB7 \u7B54\u6848\u9519\u8BEF",3:"TLE \xB7 \u8D85\u51FA\u65F6\u95F4\u9650\u5236",4:"MLE \xB7 \u8D85\u51FA\u5185\u5B58\u9650\u5236",5:"OLE \xB7 \u8F93\u51FA\u8D85\u9650",6:"RE \xB7 \u8FD0\u884C\u9519\u8BEF",7:"CE \xB7 \u7F16\u8BD1\u9519\u8BEF",8:"SE \xB7 \u8BC4\u6D4B\u7CFB\u7EDF\u9519\u8BEF",9:"\u8BC4\u6D4B\u5DF2\u53D6\u6D88",20:"\u6B63\u5728\u8BC4\u6D4B",21:"\u6B63\u5728\u7F16\u8BD1",22:"\u8BC4\u6D4B\u673A\u5DF2\u63A5\u5355",30:"\u8BC4\u6D4B\u5DF2\u5FFD\u7565",31:"FE \xB7 \u6D4B\u8BD5\u6570\u636E\u683C\u5F0F\u9519\u8BEF"};async function resultFromHydro(settings,user,problemId,receipt){const match=/^([0-9a-f]{24})\.([a-zA-Z0-9_-]{43})$/.exec(receipt);if(!match)return null;const[,rid,encoded]=match;const signature=Uint8Array.from(atob(encoded.replace(/-/g,"+").replace(/_/g,"/")),c2=>c2.charCodeAt(0));if(!await crypto.subtle.verify("HMAC",await receiptKey(settings),signature,receiptData(settings,user,problemId,rid)))return null;const{rdoc}=await hydroRequest(settings,`record/${rid}`);if(rdoc?._id!==rid||!Number.isInteger(rdoc.status))throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u672A\u8FD4\u56DE\u6709\u6548\u7684\u8BC4\u6D4B\u8BB0\u5F55\u3002");const{status,score,time,memory}=rdoc;const diagnostics=status===7&&Array.isArray(rdoc.compilerTexts)?rdoc.compilerTexts.filter(line=>typeof line==="string").join("\n").slice(0,8192):"";return{status,verdict:statuses[status]??"\u8BC4\u6D4B\u72B6\u6001\u672A\u77E5",pending:[0,20,21,22].includes(status),score:Number.isFinite(score)?score:null,timeMs:Number.isFinite(time)?time:null,memoryKiB:Number.isFinite(memory)?memory:null,diagnostics}}var SITE_NAME="\u91CE\u86EE\u751F\u957F";var DEFAULT_OWNER_USERNAME="Chegada_";var ADMIN_TAG_MAX=24;var DEFAULT_ADMIN_TAG="\u7BA1\u7406\u5458";var SITE_TAGLINE="NEO-BRUTALIST NOTES \xB7 Chegada \xB7 CSP-S";function escapeHtml2(value){return String(value??"").replace(/[&<>"']/g,ch2=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch2])}function slugify(title){const base2=title.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-+|-+$/g,"");return base2||`post-${Date.now()}`}function profilePath(username){return"/users/"+encodeURIComponent(username)}function mentionLink(username,accounts){if(!accounts.has(username))return void 0;return`<a class="mention-link" href="${profilePath(username)}">@${escapeHtml2(username)}</a>`}function linkedComment(content,accounts){let output="",end=0;for(const match of plainMentions(content)){output+=escapeHtml2(content.slice(end,match.index));output+=mentionLink(match[1],accounts)??escapeHtml2(match[0]);end=match.index+match[0].length}return output+escapeHtml2(content.slice(end))}function adminTag(account){if(account?.role!=="admin"&&!account?.isRootAdmin)return"";return`<span class="admin-tag"><span class="admin-tag-text">${escapeHtml2(account.adminTag||DEFAULT_ADMIN_TAG)}</span></span>`}function displayName(username,isAdmin){const text4=escapeHtml2(username);return isAdmin?`<span class="admin-name-label"><span class="admin-name-text">${text4}</span></span>`:text4}function authorName(username,accounts,link2=true){if(!username)return"\u533F\u540D";const account=accounts.get(username);const isAdmin=account?.role==="admin";const css2="author-name"+(isAdmin?" admin-gradient":"");const name=displayName(username,isAdmin);const label=link2?`<a class="${css2}" href="${profilePath(username)}">${name}</a>`:`<span class="${css2}">${name}</span>`;const tag=adminTag(account);return tag?`<span class="author-identity">${label}${tag}</span>`:label}function layout({title,body,active="",user=null,math:math3=false,mentionPicker=false}){const isAdmin=user?.role==="admin"||user?.isRootAdmin;const navAuth=user?`<span class="author-identity nav-identity"><a class="nav-user author-name${isAdmin?" admin-gradient":""}" href="${profilePath(user.username)}" aria-label="\u6211\u7684\u4E3B\u9875 \xB7 ${escapeHtml2(user.username)}" data-tooltip="\u6211\u7684\u4E3B\u9875">${displayName(user.username,isAdmin)}</a>${adminTag(user)}</span>
+})();`;var MAX_SOURCE_LENGTH=32768;var recordId=/^[0-9a-f]{24}$/;var encoder=new TextEncoder;var HydroJudgeError=class extends Error{constructor(message,status=502){super(message);this.status=status}};function hydroSettings(env){const{HYDRO_BASE_URL,HYDRO_TOKEN,HYDRO_RECEIPT_KEY,HYDRO_DOMAIN}=env;const language=env.HYDRO_CPP17_LANG||"cc.cc17o2";if(!HYDRO_BASE_URL||!/^[\w-]{24,128}$/.test(HYDRO_TOKEN||"")||!/^[0-9a-f]{64}$/i.test(HYDRO_RECEIPT_KEY||"")||!/^[a-z0-9_.-]{1,40}$/i.test(language)||HYDRO_DOMAIN&&!/^[a-z0-9_-]{1,64}$/i.test(HYDRO_DOMAIN))return null;let base2;try{base2=new URL(HYDRO_BASE_URL)}catch{return null}if(base2.protocol!=="https:"||base2.pathname!=="/"||base2.username||base2.password||base2.search||base2.hash)return null;const domainPath=HYDRO_DOMAIN?`d/${HYDRO_DOMAIN}/`:"";return{url:new URL(domainPath,base2).href,token:HYDRO_TOKEN,secret:HYDRO_RECEIPT_KEY,language}}async function hydroRequest(settings,path2,payload){let response;try{response=await fetch(new URL(path2,settings.url),{method:payload?"POST":"GET",headers:{Accept:"application/json",Authorization:"Bearer "+settings.token,...payload?{"Content-Type":"application/json"}:{}},body:payload?JSON.stringify(payload):void 0,cache:"no-store",redirect:"manual",signal:AbortSignal.timeout(12e3)})}catch{throw new HydroJudgeError(payload?"\u8BC4\u6D4B\u670D\u52A1\u6682\u672A\u786E\u8BA4\u6536\u5230\u63D0\u4EA4\u3002":"\u6682\u65F6\u65E0\u6CD5\u67E5\u8BE2\u8BC4\u6D4B\u7ED3\u679C\u3002")}if(response.status===429)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u7E41\u5FD9\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002",503);if(!response.ok)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u6682\u65F6\u65E0\u6CD5\u5904\u7406\u6B64\u8BF7\u6C42\u3002");let data;try{data=await response.json()}catch{throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u8FD4\u56DE\u4E86\u65E0\u6548\u7ED3\u679C\u3002")}if(!data||typeof data!=="object"||data.error)throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u8FD4\u56DE\u4E86\u65E0\u6548\u7ED3\u679C\u3002");return data}function receiptKey(settings){const bytes=Uint8Array.from(settings.secret.match(/../g),byte=>parseInt(byte,16));return crypto.subtle.importKey("raw",bytes,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"])}function receiptData(settings,user,problemId,rid){return encoder.encode(JSON.stringify(["blog-hydro-v1",settings.url,user.key,user.createdAt||"",problemId,rid]))}async function submitToHydro(settings,user,problemId,code2){const key=await receiptKey(settings);const{rid}=await hydroRequest(settings,`p/${encodeURIComponent(problemId)}/submit`,{lang:settings.language,code:code2});if(typeof rid!=="string"||!recordId.test(rid))throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u672A\u8FD4\u56DE\u6709\u6548\u7684\u63D0\u4EA4\u7F16\u53F7\u3002");const signature=await crypto.subtle.sign("HMAC",key,receiptData(settings,user,problemId,rid));return rid+"."+btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}var statuses={0:"\u7B49\u5F85\u8BC4\u6D4B",1:"AC \xB7 \u7B54\u6848\u6B63\u786E",2:"WA \xB7 \u7B54\u6848\u9519\u8BEF",3:"TLE \xB7 \u8D85\u51FA\u65F6\u95F4\u9650\u5236",4:"MLE \xB7 \u8D85\u51FA\u5185\u5B58\u9650\u5236",5:"OLE \xB7 \u8F93\u51FA\u8D85\u9650",6:"RE \xB7 \u8FD0\u884C\u9519\u8BEF",7:"CE \xB7 \u7F16\u8BD1\u9519\u8BEF",8:"SE \xB7 \u8BC4\u6D4B\u7CFB\u7EDF\u9519\u8BEF",9:"\u8BC4\u6D4B\u5DF2\u53D6\u6D88",20:"\u6B63\u5728\u8BC4\u6D4B",21:"\u6B63\u5728\u7F16\u8BD1",22:"\u8BC4\u6D4B\u673A\u5DF2\u63A5\u5355",30:"\u8BC4\u6D4B\u5DF2\u5FFD\u7565",31:"FE \xB7 \u6D4B\u8BD5\u6570\u636E\u683C\u5F0F\u9519\u8BEF"};function metric(value){return Number.isFinite(value)&&value>=0?value:null}function publicTestCases(testCases){if(!Array.isArray(testCases))return[];return testCases.filter(test=>Number.isSafeInteger(test?.id)&&test.id>0&&Number.isInteger(test.status)).map(test=>({id:test.id,subtaskId:Number.isSafeInteger(test.subtaskId)&&test.subtaskId>0?test.subtaskId:0,status:test.status,verdict:statuses[test.status]??"\u8BC4\u6D4B\u72B6\u6001\u672A\u77E5",timeMs:metric(test.time),memoryKiB:metric(test.memory)})).sort((a,b)=>a.subtaskId-b.subtaskId||a.id-b.id)}async function resultFromHydro(settings,user,problemId,receipt){const match=/^([0-9a-f]{24})\.([a-zA-Z0-9_-]{43})$/.exec(receipt);if(!match)return null;const[,rid,encoded]=match;const signature=Uint8Array.from(atob(encoded.replace(/-/g,"+").replace(/_/g,"/")),c2=>c2.charCodeAt(0));if(!await crypto.subtle.verify("HMAC",await receiptKey(settings),signature,receiptData(settings,user,problemId,rid)))return null;const{rdoc}=await hydroRequest(settings,`record/${rid}`);if(rdoc?._id!==rid||!Number.isInteger(rdoc.status))throw new HydroJudgeError("\u8BC4\u6D4B\u670D\u52A1\u672A\u8FD4\u56DE\u6709\u6548\u7684\u8BC4\u6D4B\u8BB0\u5F55\u3002");const{status,score,time,memory}=rdoc;const diagnostics=status===7&&Array.isArray(rdoc.compilerTexts)?rdoc.compilerTexts.filter(line=>typeof line==="string").join("\n").slice(0,8192):"";return{status,verdict:statuses[status]??"\u8BC4\u6D4B\u72B6\u6001\u672A\u77E5",pending:[0,20,21,22].includes(status),score:Number.isFinite(score)?score:null,timeMs:Number.isFinite(time)?time:null,memoryKiB:Number.isFinite(memory)?memory:null,diagnostics,cases:publicTestCases(rdoc.testCases)}}var SITE_NAME="\u91CE\u86EE\u751F\u957F";var DEFAULT_OWNER_USERNAME="Chegada_";var ADMIN_TAG_MAX=24;var DEFAULT_ADMIN_TAG="\u7BA1\u7406\u5458";var SITE_TAGLINE="NEO-BRUTALIST NOTES \xB7 Chegada \xB7 CSP-S";function escapeHtml2(value){return String(value??"").replace(/[&<>"']/g,ch2=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch2])}function slugify(title){const base2=title.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-+|-+$/g,"");return base2||`post-${Date.now()}`}function profilePath(username){return"/users/"+encodeURIComponent(username)}function mentionLink(username,accounts){if(!accounts.has(username))return void 0;return`<a class="mention-link" href="${profilePath(username)}">@${escapeHtml2(username)}</a>`}function linkedComment(content,accounts){let output="",end=0;for(const match of plainMentions(content)){output+=escapeHtml2(content.slice(end,match.index));output+=mentionLink(match[1],accounts)??escapeHtml2(match[0]);end=match.index+match[0].length}return output+escapeHtml2(content.slice(end))}function adminTag(account){if(account?.role!=="admin"&&!account?.isRootAdmin)return"";return`<span class="admin-tag"><span class="admin-tag-text">${escapeHtml2(account.adminTag||DEFAULT_ADMIN_TAG)}</span></span>`}function displayName(username,isAdmin){const text4=escapeHtml2(username);return isAdmin?`<span class="admin-name-label"><span class="admin-name-text">${text4}</span></span>`:text4}function authorName(username,accounts,link2=true){if(!username)return"\u533F\u540D";const account=accounts.get(username);const isAdmin=account?.role==="admin";const css2="author-name"+(isAdmin?" admin-gradient":"");const name=displayName(username,isAdmin);const label=link2?`<a class="${css2}" href="${profilePath(username)}">${name}</a>`:`<span class="${css2}">${name}</span>`;const tag=adminTag(account);return tag?`<span class="author-identity">${label}${tag}</span>`:label}function layout({title,body,active="",user=null,math:math3=false,mentionPicker=false}){const isAdmin=user?.role==="admin"||user?.isRootAdmin;const navAuth=user?`<span class="author-identity nav-identity"><a class="nav-user author-name${isAdmin?" admin-gradient":""}" href="${profilePath(user.username)}" aria-label="\u6211\u7684\u4E3B\u9875 \xB7 ${escapeHtml2(user.username)}" data-tooltip="\u6211\u7684\u4E3B\u9875">${displayName(user.username,isAdmin)}</a>${adminTag(user)}</span>
        <a href="#" onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/');return false;" class="${active==="login"?"is-active":""}">\u9000\u51FA</a>`:`<a href="/login" class="${active==="login"?"is-active":""}">\u767B\u5F55</a>`;return`<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -1444,6 +1505,10 @@ ${escapeHtml2(p.content||"")}</textarea>
     </form>
     <div id="problem-judge-result" class="problem-judge-result" hidden>
       <p role="status"></p><p class="judge-metrics" hidden></p><pre hidden></pre>
+      <section class="judge-cases" aria-labelledby="judge-cases-title" hidden>
+        <h3 id="judge-cases-title">\u6D4B\u8BD5\u70B9</h3>
+        <ol class="judge-case-list" role="list"></ol>
+      </section>
       <button type="button" class="btn btn-sm btn-ghost">\u5237\u65B0\u7ED3\u679C</button>
     </div>`:`<a href="/login?next=${encodeURIComponent(path2)}" class="btn btn-edit">\u767B\u5F55\u540E\u63D0\u4EA4</a>`}
   </section>`}function problemPage(problem,user,canSubmit){const{id,title,level,statement,samples}=problem;const samplePairs=samples.map((sample,index)=>`<div class="problem-samples">
