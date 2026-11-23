@@ -289,7 +289,9 @@ export class CommunityStore {
           FROM activity a
           WHERE ? = 0 OR a.author = ? OR a.author IN (SELECT target FROM follows WHERE actor = ?)
           ORDER BY a.id DESC LIMIT ? OFFSET ?`, viewer, Number(following), viewer, viewer, PAGE_SIZE + 1, offset);
-        const pins = this.rows('SELECT id,title FROM topics WHERE pinned=1 ORDER BY pinned DESC,latest DESC,id DESC LIMIT 6');
+        const pins = this.rows(`SELECT t.id,t.title,t.name,t.board,t.at,
+          (SELECT count(*) FROM topic_replies WHERE topic=t.id) AS replies
+          FROM topics t WHERE t.pinned=1 ORDER BY t.latest DESC,t.id DESC LIMIT 6`);
         return { ...paginate(entries), pins };
       }
       case 'activity': {
@@ -738,18 +740,35 @@ function homeIntro() {
   </section>`;
 }
 
+function homepagePins(pins, accounts, tools) {
+  if (!pins.length) return '';
+  const cards = pins.map(topic => `
+    <article class="homepage-pin" data-board="${htmlEscape(topic.board)}">
+      <span class="homepage-pin-avatar" aria-hidden="true">${htmlEscape(Array.from(topic.name)[0]?.toUpperCase() || '?')}</span>
+      <div class="homepage-pin-content">
+        <a class="homepage-pin-title" href="${topicPath(topic.id)}" title="${htmlEscape(topic.title)}">${htmlEscape(topic.title)}</a>
+        <div class="homepage-pin-meta">${tools.authorName(topic.name, accounts)}
+          <a class="homepage-pin-board" href="/discuss?board=${encodeURIComponent(topic.board)}">${BOARDS.get(topic.board)}</a>
+        </div>
+        <div class="homepage-pin-details">${date(topic.at)}<span>${topic.replies} 回复</span><span class="homepage-pin-badge">置顶</span></div>
+      </div>
+    </article>`).join('');
+  return `<section class="homepage-pins" aria-labelledby="homepage-pins-title">
+    <header><h2 id="homepage-pins-title">置顶讨论</h2><a href="/discuss">全部讨论 <span aria-hidden="true">↗</span></a></header>
+    <div class="homepage-pins-grid">${cards}</div>
+  </section>`;
+}
+
 async function renderFeed(env, user, actor, url, page, tools) {
   const following = Boolean(actor && url.searchParams.get('view') === 'following');
   const data = await callStore(env, 'social', 'feed', { actor, following, page });
   const { pins } = data;
-  const [accounts, markdown] = await Promise.all([namesFor(env, data.rows, tools), markdownFor(env, data.rows, tools)]);
+  const [accounts, markdown] = await Promise.all([namesFor(env, [...data.rows, ...pins], tools), markdownFor(env, data.rows, tools)]);
   const path = following ? '/?view=following' : '/';
   const tabs = `<nav class="community-tabs" aria-label="动态筛选">
     ${selected(!following, '/', '全站动态')}${actor ? selected(following, '/?view=following', '我关注的') : ''}
   </nav>`;
-  const aside = `${pins.length ? `<section class="community-card community-sidebar-card homepage-pins">
-    <h2>置顶讨论</h2>${pins.map(topic=>`<a href="${topicPath(topic.id)}">${htmlEscape(topic.title)}</a>`).join('')}
-    </section>` : ''}<div class="community-card community-sidebar-card">
+  const aside = `<div class="community-card community-sidebar-card">
     <h2>常用入口</h2>
     ${[ ['/members', '找用户'], ['/articles', '全部文章'],
       ...(user ? [['/my/articles', '我的文章'], ['/messages', '私信']] : [])].map(([href, text]) => selected(false, href, text)).join('')}
@@ -760,7 +779,7 @@ async function renderFeed(env, user, actor, url, page, tools) {
     actor ? `<section class="community-card benben-card">${writeForm('/benben', '发布犇犇', '说点什么', MAX_ACTIVITY_BODY, true)}</section>` : loginLine('发布犇犇'),
     data.rows.length ? data.rows.map(row => feedCard(row, accounts, tools, actor, markdown)).join('') : `<div class="community-card community-empty">${empty}</div>`,
     pageLinks(path, page, data.more),
-  ].join(''), aside, true, homeIntro());
+  ].join(''), aside, true, homeIntro() + homepagePins(pins, accounts, tools));
 }
 
 function renderReplies(rows, accounts, tools, markdown, actor) {
@@ -1320,10 +1339,37 @@ export const communityCss = contestCss + `
   border:1px solid #5a425c;background:#fff6e5;font-size:.85rem;
 }
 .community-home-shortcuts a span:first-child{grid-column:1/-1;color:#68495e;font-size:.72rem}
-.homepage-pins{margin-bottom:10px}
-.homepage-pins a{overflow-wrap:anywhere}
-.community-home-intro+.community-layout{margin-top:18px;gap:16px}
-.community-home-intro+.community-layout .community-main{gap:9px}
+.homepage-pins{
+  max-width:960px;margin:22px auto 0;padding:12px 14px 14px;
+  color:#182736;background:#f4f7f7;border:1px solid #8aa9ae;border-radius:10px;
+}
+.homepage-pins>header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.homepage-pins h2{margin:0;font-size:1.04rem;line-height:1.35}
+.homepage-pins>header>a{color:#155969;font-size:.78rem;font-weight:700;white-space:nowrap;text-underline-offset:3px}
+.homepage-pins-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.homepage-pin{
+  display:grid;grid-template-columns:38px minmax(0,1fr);align-items:center;gap:9px;
+  padding:8px 10px;background:#fffdf9;border:1px solid #80aab2;border-radius:8px;
+}
+.homepage-pin:only-child{grid-column:1/-1}
+.homepage-pin:focus-within,.homepage-pin:hover{background:#f4fcfc;border-color:#277b8c}
+.homepage-pin-avatar{
+  display:grid;place-items:center;aspect-ratio:1;border:1px solid #b3d2d5;border-radius:50%;
+  background:#dceff0;color:#125362;font-size:1.04rem;font-weight:800;
+}
+.homepage-pin[data-board=announcements] .homepage-pin-avatar{background:#ffedcf;border-color:#e9c789;color:#694014}
+.homepage-pin[data-board=problems] .homepage-pin-avatar{background:#ece7fa;border-color:#d5c8ef;color:#573a7d}
+.homepage-pin-content{display:grid;gap:2px;min-width:0}
+.homepage-pin-title{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  color:#175b71;font-size:.9rem;font-weight:720;line-height:1.45;text-decoration:none}
+.homepage-pin-title:hover,.homepage-pin-title:focus-visible{text-decoration:underline;text-underline-offset:3px}
+.homepage-pin-meta,.homepage-pin-details{display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;font-size:.72rem;line-height:1.4}
+.homepage-pin-meta .homepage-pin-board{color:#285873;text-decoration:none}
+.homepage-pin-meta .homepage-pin-board:hover{text-decoration:underline}
+.homepage-pin-details{color:#46576a;font-variant-numeric:tabular-nums}
+.homepage-pin-badge{padding:1px 5px;border-radius:3px;background:#f7dbce;color:#842b23;font-weight:750}
+:is(.community-home-intro,.homepage-pins)+.community-layout{margin-top:18px;gap:16px}
+:is(.community-home-intro,.homepage-pins)+.community-layout .community-main{gap:9px}
 .benben-heading{
   display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:4px 9px;
   background:var(--night-panel);border:1px solid #4e6a82;border-radius:8px;
@@ -1353,5 +1399,9 @@ export const communityCss = contestCss + `
   .community-home-intro{margin-top:22px;grid-template-columns:minmax(0,1fr);gap:12px;padding:15px}
   .community-home-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .benben-card{padding:9px 10px}
+}
+@media(max-width:560px){
+  .homepage-pins{margin-top:18px;padding:9px}
+  .homepage-pins-grid{grid-template-columns:minmax(0,1fr)}
 }
 `;
