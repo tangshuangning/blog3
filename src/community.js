@@ -1,4 +1,5 @@
 import { markdownToolbar, markdownDialogs, markdownToolbarScript } from "./markdown-editor.js";
+import { ContestError, contestSchema, statsSchema, storedContest, scheduleJudgeRefresh, refreshPendingJudges, contestPage, contestCss } from "./contests.js";
 
 const PAGE_SIZE = 20;
 const ACTIVITY_REPLY_PAGE_SIZE = 6;
@@ -47,6 +48,9 @@ const inboxSchema = [
   )`,
   'CREATE INDEX IF NOT EXISTS messages_sender ON messages(sender, recipient, id)',
   'CREATE INDEX IF NOT EXISTS messages_recipient ON messages(recipient, sender, id)',
+  `CREATE TABLE IF NOT EXISTS message_reads (
+    recipient TEXT NOT NULL, sender TEXT NOT NULL, through INTEGER NOT NULL, PRIMARY KEY(recipient,sender)
+  )`,
 ];
 
 const NOTICE_LIMIT = 50;
@@ -84,8 +88,8 @@ function scope(account) {
   return JSON.stringify([account.key, account.createdAt || '']);
 }
 
-function identity(user) {
-  return user ? { id: scope(user), name: user.username, admin: user.role === 'admin' || user.isRootAdmin === true } : null;
+export function identity(user) {
+  return user ? { id: scope(user), name: user.username, root: user.isRootAdmin === true, admin: user.role === 'admin' || user.isRootAdmin === true } : null;
 }
 
 function requireMember(actor) {
@@ -142,7 +146,12 @@ export class CommunityStore {
     const args = await request.json();
     try {
       if (area === 'records') {
-        this.initialize(recordsSchema);
+        this.initialize([...recordsSchema, ...contestSchema]);
+        if (action.startsWith('contest-')) {
+          const output = storedContest(this, action.slice(8), args);
+          if (action === 'contest-attach' || action === 'contest-complete') await scheduleJudgeRefresh(this);
+          return Response.json(output);
+        }
         return Response.json(await this.records(action, args));
       }
       if (area === 'messages') {
@@ -153,10 +162,19 @@ export class CommunityStore {
         this.initialize(noticesSchema);
         return Response.json(await this.notices(action, args));
       }
+      if (area === 'stats') {
+        this.initialize(statsSchema);
+        if (action === 'view') {
+          this.sql.exec(`INSERT INTO site_views(day,views) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET views=views+1`,args.day);
+          return Response.json({});
+        }
+        if (!args.actor?.root) throw new CommunityError('只有站主可以查看统计。',403);
+        return Response.json(this.row(`SELECT coalesce(sum(views),0) AS visits, coalesce(sum(CASE WHEN day=? THEN views ELSE 0 END),0) AS today FROM site_views`,args.day));
+      }
       this.initialize(schema);
       return Response.json(this.community(action, args));
     } catch (error) {
-      if (!(error instanceof CommunityError)) throw error;
+      if (!(error instanceof CommunityError || error instanceof ContestError)) throw error;
       return Response.json({ error: error.message }, { status: error.status });
     }
   }
@@ -167,6 +185,11 @@ export class CommunityStore {
       for (const statement of statements) this.sql.exec(statement);
     });
     this.initialized = true;
+  }
+
+  async refreshJudges(hydroSettings, resultFromHydro) {
+    this.initialize([...recordsSchema, ...contestSchema]);
+    await refreshPendingJudges(this,this.env,hydroSettings,resultFromHydro);
   }
 
   rows(query, ...params) {
@@ -266,7 +289,8 @@ export class CommunityStore {
           FROM activity a
           WHERE ? = 0 OR a.author = ? OR a.author IN (SELECT target FROM follows WHERE actor = ?)
           ORDER BY a.id DESC LIMIT ? OFFSET ?`, viewer, Number(following), viewer, viewer, PAGE_SIZE + 1, offset);
-        return paginate(entries);
+        const pins = this.rows('SELECT id,title FROM topics WHERE pinned=1 ORDER BY pinned DESC,latest DESC,id DESC LIMIT 6');
+        return { ...paginate(entries), pins };
       }
       case 'activity': {
         const id = itemId(args.id);
@@ -373,6 +397,16 @@ export class CommunityStore {
 
   messages(action, { actor, target, body, page }) {
     const { id, name } = requireMember(actor);
+    const kv = this.ctx.storage.kv;
+    if (kv.get('dm-release-id') === undefined) {
+      kv.put('dm-release-id', this.row('SELECT coalesce(max(id),0) AS id FROM messages').id);
+    }
+    const baseline = kv.get('dm-release-id');
+    if (action === 'unread') {
+      return this.row(`SELECT count(*) AS unread FROM (
+        SELECT 1 FROM messages m LEFT JOIN message_reads r ON r.recipient=m.recipient AND r.sender=m.sender
+        WHERE m.recipient=? AND m.id>max(?,coalesce(r.through,0)) LIMIT 100)`,id,baseline);
+    }
     const offset = (pageNumber(page) - 1) * PAGE_SIZE;
     if (action === 'inbox') {
       return paginate(this.rows(`WITH related AS (
@@ -385,9 +419,14 @@ export class CommunityStore {
     }
     if (!target || id === target.id) throw new CommunityError('请选择其他用户。');
     if (action === 'thread') {
-      return paginate(this.rows(`SELECT id, sender_name AS name, body, at, sender = ? AS mine
+      const messages = paginate(this.rows(`SELECT id, sender_name AS name, body, at, sender = ? AS mine
         FROM messages WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
         ORDER BY id DESC LIMIT ? OFFSET ?`, id, id, target.id, target.id, id, PAGE_SIZE + 1, offset));
+      if (!offset && messages.rows.length) {
+        this.sql.exec(`INSERT INTO message_reads(recipient,sender,through) VALUES (?,?,?)
+          ON CONFLICT(recipient,sender) DO UPDATE SET through=max(message_reads.through,excluded.through)`,id,target.id,messages.rows[0].id);
+      }
+      return messages;
     }
     if (action !== 'send') throw new CommunityError('操作不存在。', 404);
     this.sql.exec('INSERT INTO messages (sender, recipient, sender_name, recipient_name, body, at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -446,6 +485,12 @@ export class CommunityStore {
   async records(action, args) {
     if (action === 'save') {
       this.insertRecord(args);
+      if (args.pid && (args.status === undefined || [0,20,21,22].includes(args.status))) {
+        this.sql.exec('INSERT OR IGNORE INTO judge_refresh(rid,pid,due) VALUES (?,?,?)',args.rid,args.pid,Date.now()+1500);
+        await scheduleJudgeRefresh(this);
+      } else if (Number.isInteger(args.status) && ![0,20,21,22].includes(args.status)) {
+        this.sql.exec('DELETE FROM judge_refresh WHERE rid=?',args.rid);
+      }
       return {};
     }
     if (!this.importRetryAt || Date.now() >= this.importRetryAt) {
@@ -455,17 +500,46 @@ export class CommunityStore {
         console.warn('Unable to import legacy submission history', error?.message);
       }
     }
-    const visible = 'rid, owner, name, at, status, verdict, score, language, time_ms, memory_kib';
+    if (action === 'count') {
+      if (!args.actor?.root) throw new CommunityError('只有站主可以查看统计。',403);
+      return this.row('SELECT count(*) AS submissions, count(CASE WHEN at >= ? THEN 1 END) AS today FROM records',args.since);
+    }
+    if (action === 'history') {
+      const [owner, createdAt] = JSON.parse(requireMember(args.actor).id);
+      const page = pageNumber(args.page);
+      const filter = `FROM records r WHERE r.owner=? AND r.account_date=? AND r.problem=? AND
+        NOT EXISTS(SELECT 1 FROM contest_attempts c WHERE c.rid=r.rid)`;
+      const params = [owner,createdAt,args.problem];
+      const history = paginate(this.rows(`SELECT r.receipt,r.at AS submittedAt,r.verdict,r.score,r.status,r.language ${filter}
+        ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,...params,PAGE_SIZE+1,(page-1)*PAGE_SIZE));
+      const best = this.row(`SELECT max(r.score) AS highest ${filter} AND r.status NOT IN (0,20,21,22)`,...params);
+      return { records:history.rows.map(row=>({...row,verdict:row.verdict || '等待评测结果',pending:row.status===null || [0,20,21,22].includes(row.status)})),
+        highest:best.highest,cursor:history.more?String(page+1):null };
+    }
+    const visible = 'r.rid, r.problem, r.owner, r.name, r.at, r.status, r.verdict, r.score, r.language, r.time_ms, r.memory_kib, a.contest';
     if (action === 'list') {
-      return paginate(this.rows(`SELECT ${visible} FROM records WHERE problem = ? ORDER BY at DESC, rid DESC LIMIT ? OFFSET ?`,
-        args.problem, PAGE_SIZE + 1, (pageNumber(args.page) - 1) * PAGE_SIZE));
+      const filters = [];
+      const parameters = [];
+      if (args.problem) {
+        filters.push('r.problem=?');
+        parameters.push(args.problem);
+      }
+      if (args.mine) {
+        const [key,createdAt] = JSON.parse(requireMember(args.actor).id);
+        filters.push('r.owner=? AND r.account_date=?');
+        parameters.push(key,createdAt);
+      }
+      const where = filters.length ? 'WHERE ' + filters.join(' AND ') : '';
+      return paginate(this.rows(`SELECT ${visible} FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid ${where} ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,
+        ...parameters, PAGE_SIZE + 1, (pageNumber(args.page) - 1) * PAGE_SIZE));
     }
     if (action !== 'record') throw new CommunityError('操作不存在。', 404);
-    const row = this.row(`SELECT ${visible}, account_date, receipt FROM records WHERE problem = ? AND rid = ?`, args.problem, args.rid);
+    const row = this.row(`SELECT ${visible},r.account_date,r.receipt FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid
+      WHERE r.rid=? AND (? IS NULL OR r.problem=?)`,args.rid,args.problem || null,args.problem || null);
     if (!row) throw new CommunityError('提交记录不存在。', 404);
     const { receipt, account_date, ...result } = row;
     const owner = scope({ key: row.owner, createdAt: account_date });
-    return args.actor && (args.actor.admin || args.actor.id === owner)
+    return !row.contest && args.actor?.id === owner
       ? { ...result, receipt, accountDate: account_date }
       : result;
   }
@@ -487,15 +561,42 @@ export function callNotificationStore(env, account, action, args) {
   return callStore(env, 'notices', action, { ...args, account }, 'notices:' + account);
 }
 
-export async function saveCommunityRecord(env, user, problem, receipt, result = {}) {
-  if (!env.COMMUNITY_STORE) return;
+export function readDirectBadge(env,user) {
+  return !env.COMMUNITY_STORE || !user ? Promise.resolve({ unread:0 }) : callStore(env,'messages','unread',{ actor:identity(user) });
+}
+
+export function readPracticeHistory(env,user,problem,page) {
+  return callStore(env,'records','history',{actor:identity(user),problem,page});
+}
+
+const localDay = new Intl.DateTimeFormat('en-CA',{ timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit' });
+
+export function countPageVisit(env) {
+  const shard = crypto.getRandomValues(new Uint8Array(1))[0] % 8;
+  return callStore(env,'stats','view',{ day:localDay.format(Date.now()) },'site-stats:'+shard);
+}
+
+export async function callContestStore(env, action, args) {
+  try { return await callStore(env,'records','contest-'+action,args); }
+  catch (error) {
+    if (error instanceof CommunityError) throw new ContestError(error.message,error.status);
+    throw error;
+  }
+}
+
+export function communityRecord(user, problem, receipt, result = {}) {
   const rid = receipt.slice(0, 24);
   const { status, verdict, score, language, timeMs, memoryKiB } = result;
+  return {
+    rid, problem, owner:user.key, name:user.username, accountDate:user.createdAt || '', receipt,
+    at:parseInt(rid.slice(0,8),16)*1000,status,verdict,score,language,timeMs,memoryKiB,
+  };
+}
+
+export async function saveCommunityRecord(env, user, problem, receipt, result = {}, pid) {
+  if (!env.COMMUNITY_STORE) return;
   try {
-    await callStore(env, 'records', 'save', {
-      rid, problem, owner: user.key, name: user.username, accountDate: user.createdAt || '', receipt,
-      at: parseInt(rid.slice(0, 8), 16) * 1000, status, verdict, score, language, timeMs, memoryKiB,
-    });
+    await callStore(env,'records','save',{ ...communityRecord(user,problem,receipt,result),pid });
   } catch (error) {
     console.warn('Unable to index submission', error?.message);
   }
@@ -640,18 +741,21 @@ function homeIntro() {
 async function renderFeed(env, user, actor, url, page, tools) {
   const following = Boolean(actor && url.searchParams.get('view') === 'following');
   const data = await callStore(env, 'social', 'feed', { actor, following, page });
+  const { pins } = data;
   const [accounts, markdown] = await Promise.all([namesFor(env, data.rows, tools), markdownFor(env, data.rows, tools)]);
   const path = following ? '/?view=following' : '/';
   const tabs = `<nav class="community-tabs" aria-label="动态筛选">
     ${selected(!following, '/', '全站动态')}${actor ? selected(following, '/?view=following', '我关注的') : ''}
   </nav>`;
-  const aside = `<div class="community-card community-sidebar-card">
+  const aside = `${pins.length ? `<section class="community-card community-sidebar-card homepage-pins">
+    <h2>置顶讨论</h2>${pins.map(topic=>`<a href="${topicPath(topic.id)}">${htmlEscape(topic.title)}</a>`).join('')}
+    </section>` : ''}<div class="community-card community-sidebar-card">
     <h2>常用入口</h2>
     ${[ ['/members', '找用户'], ['/articles', '全部文章'],
       ...(user ? [['/my/articles', '我的文章'], ['/messages', '私信']] : [])].map(([href, text]) => selected(false, href, text)).join('')}
   </div>`;
   const empty = following ? '还没有关注用户的动态。' : '还没有犇犇，来发第一条动态吧。';
-  return communityPage(tools, user, '犇犇', 'home', [
+  return communityPage(tools, user, '首页', 'home', [
     `<header class="benben-heading"><h2>犇犇</h2>${tabs}</header>`, mentionStatus(url),
     actor ? `<section class="community-card benben-card">${writeForm('/benben', '发布犇犇', '说点什么', MAX_ACTIVITY_BODY, true)}</section>` : loginLine('发布犇犇'),
     data.rows.length ? data.rows.map(row => feedCard(row, accounts, tools, actor, markdown)).join('') : `<div class="community-card community-empty">${empty}</div>`,
@@ -842,22 +946,24 @@ function recordScore(value) {
   return Number.isFinite(value) ? htmlEscape(value + ' 分') : '—';
 }
 
-async function renderRecords(env, user, actor, id, rid, page, tools) {
-  const problem = tools.problem(id);
-  if (!problem?.hydroPid) throw new CommunityError('这道题尚未开放评测。', 404);
-  const path = '/problems/' + id + '/records';
-  const back = `<a href="/problems/${id}">返回题面</a>`;
+async function renderRecords(env, user, actor, id, rid, page, tools, mine = false) {
+  const problem = id ? tools.problem(id) : null;
+  if (id && !problem?.hydroPid) throw new CommunityError('这道题尚未开放评测。', 404);
+  const path = id ? '/problems/' + id + '/records' : '/records';
+  const back = id ? `<a href="/problems/${id}">返回题面</a>` : '<a href="/problems">浏览题库</a>';
   if (rid) {
     const row = await callStore(env, 'records', 'record', { actor, problem: id, rid });
+    if (row.contest) return tools.redirect('/contests/' + row.contest + '/problems/' + row.problem + '/records/' + rid);
     const accountNames = await tools.recordNames(env, [row]);
     const name = accountNames.get(row.owner) || row.name;
     let result;
     let codeNote = '';
     if (row.receipt) {
       const settings = tools.hydroSettings(env);
-      if (settings) {
+      const task = tools.problem(row.problem);
+      if (settings && task?.hydroPid) {
         try {
-          result = await tools.resultFromHydro(settings, { key: row.owner, createdAt: row.accountDate }, problem.hydroPid, row.receipt, true);
+          result = await tools.resultFromHydro(settings, { key: row.owner, createdAt: row.accountDate }, task.hydroPid, row.receipt, true);
         } catch {
           codeNote = '评测服务暂时不可用，请稍后刷新。';
         }
@@ -879,19 +985,23 @@ async function renderRecords(env, user, actor, id, rid, page, tools) {
         </dl>
       </div>${code}`);
   }
-  const data = await callStore(env, 'records', 'list', { problem: id, page });
+  const data = await callStore(env, 'records', 'list', { actor, problem: id, page, mine });
   const names = await tools.recordNames(env, data.rows);
   const records = data.rows.map(row => {
     const statusClass = row.status === 1 ? ' is-accepted' : Number.isInteger(row.status) && ![0,20,21,22].includes(row.status) ? ' is-judged' : '';
-    return `<tr><td>${threadLink(names.get(row.owner) || row.name)}</td>
-      <td><a href="${path}/${row.rid}" class="community-record-verdict${statusClass}">${recordStatus(row)}</a></td>
+    const href = row.contest ? '/contests/' + row.contest + '/problems/' + row.problem + '/records/' + row.rid : path + '/' + row.rid;
+    return `<tr><td>${threadLink(names.get(row.owner) || row.name)}</td><td>${htmlEscape(row.problem)}</td>
+      <td><a href="${href}" class="community-record-verdict${statusClass}">${recordStatus(row)}</a></td>
       <td>${recordScore(row.score)}</td><td>${htmlEscape(row.language || '—')}</td><td>${date(row.at)}</td></tr>`;
   }).join('');
-  return communityPage(tools, user, id + ' 提交记录', 'problems', heading(id + ' 提交记录', back) + `
+  const title = id ? id + ' 提交记录' : '提交记录';
+  const tabs = `<nav class="community-tabs" aria-label="提交记录筛选">${selected(!mine,path,'所有人的提交')}
+    ${actor ? selected(mine,path+'?view=mine','我的提交') : ''}</nav>`;
+  return communityPage(tools, user, title, 'records', heading(title, back) + tabs + `
     <section class="community-card community-table-wrap">
-      ${records ? `<table class="community-table"><thead><tr><th>提交者</th><th>评测结果</th><th>得分</th><th>语言</th><th>提交时间</th></tr></thead>
-        <tbody>${records}</tbody></table>` : '<p class="community-empty">这道题还没有提交记录。</p>'}
-    </section>${pageLinks(path, page, data.more)}`);
+      ${records ? `<table class="community-table"><thead><tr><th>提交者</th><th>题号</th><th>评测结果</th><th>得分</th><th>语言</th><th>提交时间</th></tr></thead>
+        <tbody>${records}</tbody></table>` : '<p class="community-empty">还没有提交记录。</p>'}
+    </section>${pageLinks(path + (mine ? '?view=mine' : ''), page, data.more)}`);
 }
 
 async function readForm(request, limit = 65536) {
@@ -968,18 +1078,46 @@ async function postCommunity(request, env, user, actor, path, url, tools) {
   return tools.redirect(verb === 'delete' ? '/discuss' : topicPath(id));
 }
 
+async function renderSiteStats(env, user, actor, tools) {
+  if (!actor) return tools.redirect('/login');
+  if (!actor.root) throw new CommunityError('只有站主可以查看统计。',403);
+  const day = localDay.format(Date.now());
+  const since = Date.parse(day + 'T00:00:00+08:00');
+  const [users, records, ...shards] = await Promise.all([
+    tools.accountCount(env),
+    callStore(env,'records','count',{actor,since}),
+    ...Array.from({length:8},(_,i)=>callStore(env,'stats','read',{actor,day},'site-stats:'+i)),
+  ]);
+  const visits = shards.reduce((sum,item)=>sum+item.visits,0);
+  const today = shards.reduce((sum,item)=>sum+item.today,0);
+  const cells = [['注册账号',users],['总访问量',visits],['今日访问量',today],['总评测提交',records.submissions],['今日评测提交',records.today]];
+  return communityPage(tools,user,'站点统计','stats',heading('站点统计')+`
+    <div class="site-stat-grid">${cells.map(([label,value])=>`<section class="community-card"><h2>${label}</h2><strong>${value}</strong></section>`).join('')}</div>
+    <section class="community-card"><p>访问量从统计功能上线开始计数。刷新页面也计一次。今日按北京时间计算。</p>
+      <p>评测提交包括题库练习与比赛，以本站收录的提交记录为准。</p></section>`);
+}
+
 export async function communityRoute(request, env, user, tools) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, '') || '/';
   const actor = identity(user);
   const page = pageNumber(url.searchParams.get('page'));
   try {
+    if (path === '/contests' || path.startsWith('/contests/')) {
+      return await contestPage(request,user,actor,{
+        ...tools, readForm, targetAccount:name=>targetAccount(env,name,tools),
+        store:(action,args)=>callContestStore(env,action,args),
+        hydroSettings:()=>tools.hydroSettings(env),
+        page:(viewer,title,body,math=false)=>communityPage(tools,viewer,title,'contests',body,'',math),
+      });
+    }
     if (request.method === 'POST') return await postCommunity(request, env, user, actor, path, url, tools);
     if (request.method !== 'GET') return null;
     if (path === '/' && env.COMMUNITY_STORE) return await renderFeed(env, user, actor, url, page, tools);
     if (path === '/discuss') return await renderForums(env, user, actor, url, page, tools);
     if (path === '/discuss/new') return actor ? renderNewTopic(tools, user, actor, url.searchParams.get('board')) : tools.redirect('/login');
     if (path === '/members') return await renderMembers(env, user, url, tools);
+    if (path === '/admin/stats') return await renderSiteStats(env,user,actor,tools);
     const activity = /^\/benben\/(\d+)$/.exec(path);
     if (activity) return await renderActivity(env, user, actor, activity[1], url, page, tools);
     const topic = /^\/discuss\/(\d+)$/.exec(path);
@@ -987,14 +1125,18 @@ export async function communityRoute(request, env, user, tools) {
     const chat = /^\/messages(?:\/([^/]+))?$/.exec(path);
     if (chat) return await renderMessages(env, user, actor, chat[1] && decodeURIComponent(chat[1]), page, url, tools);
     const records = /^\/problems\/([A-Z0-9]+)\/records(?:\/([a-z0-9]+))?$/i.exec(path);
-    if (records) {
-      if (records[2] && !RECORD_ID.test(records[2])) throw new CommunityError('提交记录不存在。', 404);
-      return await renderRecords(env, user, actor, records[1].toUpperCase(), records[2], page, tools);
+    const allRecords = /^\/records(?:\/([a-z0-9]+))?$/.exec(path);
+    if (records || allRecords) {
+      const rid = records?.[2] ?? allRecords?.[1];
+      if (rid && !RECORD_ID.test(rid)) throw new CommunityError('提交记录不存在。', 404);
+      const mine = url.searchParams.get('view') === 'mine';
+      if (mine && !actor) return tools.redirect('/login');
+      return await renderRecords(env,user,actor,records?.[1].toUpperCase(),rid,page,tools,mine);
     }
     return null;
   } catch (error) {
     if (error instanceof URIError) return tools.text('链接无效。', 400);
-    if (!(error instanceof CommunityError)) throw error;
+    if (!(error instanceof CommunityError || error instanceof ContestError)) throw error;
     return tools.html(tools.layout({ user, title: '社区', community: true, body:
       `<section class="community-layout"><div class="community-card"><p>${htmlEscape(error.message)}</p><a href="/">返回首页</a></div></section>`,
     }), error.status);
@@ -1063,7 +1205,7 @@ const benbenQuoteScript = String.raw`(() => {
   });
 })();`;
 
-export const communityCss = `
+export const communityCss = contestCss + `
 .community-layout{max-width:960px;margin:38px auto 76px;display:grid;gap:22px;color:var(--night-text)}
 .community-layout.has-aside{grid-template-columns:minmax(0,1fr) 220px}
 .community-main{min-width:0;display:grid;gap:14px;align-content:start}
@@ -1160,23 +1302,26 @@ export const communityCss = `
 .community-profile{margin-top:12px;color:var(--night-text)}
 .community-home-intro{
   max-width:960px;margin:32px auto 0;display:grid;grid-template-columns:minmax(0,1fr) 215px;align-items:center;gap:20px;
-  padding:23px 24px;border:1px solid #527689;border-radius:14px;color:var(--night-text);
-  background:linear-gradient(103deg,#101d2e 24%,#111f31e8 58%,#132433d9),url('/pcb-chip-poster.webp') 72% 42%/cover;
-  box-shadow:0 10px 28px #07111e66,inset 3px 0 #7ce7ee;
+  padding:clamp(26px,4vw,48px);border:3px solid #201d22;border-radius:0;color:#201d22;
+  background:repeating-linear-gradient(132deg,transparent 0 31px,#6b3c810c 32px 33px),
+    linear-gradient(109deg,#ffe092 5%,#ffc49a 54%,#ead9ff 100%);
+  box-shadow:7px 7px 0 #201d22;
 }
-.community-home-copy h1{font-size:clamp(1.75rem,5vw,2.55rem);line-height:1.15;margin:0;color:var(--night-text)}
-.community-home-copy p{color:#c4d7e8;margin:7px 0 13px;font-size:.91rem}
+.community-home-copy h1{font-size:clamp(2rem,5vw,3.45rem);line-height:1.13;margin:0;color:#201d22}
+.community-home-copy p{color:#4d3747;margin:9px 0 16px;font-size:.96rem}
 .community-home-links{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
-.community-home-links a,.community-home-shortcuts a{color:#dff7ff;text-decoration:none}
-.community-home-links a{padding:5px 10px;border:1px solid #60889b;border-radius:6px;font-size:.82rem;font-weight:720}
-.community-home-links a:first-child{color:#10232d;background:#9debf0;border-color:#9debf0}
-.community-home-links a:hover,.community-home-shortcuts a:hover{border-color:#9debf0;text-decoration:underline}
+.community-home-links a,.community-home-shortcuts a{color:#271d31;text-decoration:none}
+.community-home-links a{padding:6px 11px;border:1px solid #443349;background:#fff7df;font-size:.84rem;font-weight:720}
+.community-home-links a:first-child{color:#fff7df;background:#352548;border-color:#352548}
+.community-home-links a:hover,.community-home-shortcuts a:hover{border-color:#352548;text-decoration:underline}
 .community-home-shortcuts{display:grid;gap:7px;min-width:0}
 .community-home-shortcuts a{
-  display:grid;grid-template-columns:1fr auto;gap:3px 7px;padding:8px 10px;border-radius:7px;
-  border:1px solid #567386;background:#101f2fdb;font-size:.85rem;
+  display:grid;grid-template-columns:1fr auto;gap:3px 7px;padding:9px 11px;
+  border:1px solid #5a425c;background:#fff6e5;font-size:.85rem;
 }
-.community-home-shortcuts a span:first-child{grid-column:1/-1;color:#b4cedf;font-size:.72rem}
+.community-home-shortcuts a span:first-child{grid-column:1/-1;color:#68495e;font-size:.72rem}
+.homepage-pins{margin-bottom:10px}
+.homepage-pins a{overflow-wrap:anywhere}
 .community-home-intro+.community-layout{margin-top:18px;gap:16px}
 .community-home-intro+.community-layout .community-main{gap:9px}
 .benben-heading{
