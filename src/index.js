@@ -1576,7 +1576,7 @@ function problemPage(problem,user,canSubmit,contest) {
     ${contest && !canSubmit ? `<p>${contest.canSubmit ? "评测服务暂未配置。" : contest.registered ? "当前不在比赛提交时段。" : "请在比赛主页报名后提交。"} <a href="${contest.base}">比赛主页</a></p>` : ''}
     <span class="problem-level">${escapeHtml2(level)}</span>
     <div class="prose">${renderArticle(parseArticle(statement))}
-      <h2>\u8F93\u5165\u8F93\u51FA\u6837\u4F8B</h2>${samplePairs}
+      ${samplePairs ? '<h2>输入输出样例</h2>' + samplePairs : ''}
     </div>
   </article>`;
   const body = canSubmit ? `<div class="problem-workspace">${statementPanel}${problemSubmission(problem,user,contest,records)}</div>` : statementPanel;

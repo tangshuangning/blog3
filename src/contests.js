@@ -36,6 +36,7 @@ const slugFormat = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const idFormat = /^[A-Z0-9][A-Z0-9_-]{0,23}$/;
 const hydroFormat = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ridFormat = /^[0-9a-f]{24}$/;
+const contestTaskLimit = 26;
 const pageSize = 24;
 const pending = [0, 20, 21, 22];
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -87,11 +88,11 @@ function editContest(store, args) {
   if (!Number.isSafeInteger(data.starts) || !Number.isSafeInteger(data.ends) || data.starts >= data.ends) {
     throw new ContestError('结束时间须晚于开始时间。');
   }
-  if (!data.tasks.length || data.tasks.length > 20 ||
+  if (!data.tasks.length || data.tasks.length > contestTaskLimit ||
       data.tasks.some(task => !idFormat.test(task.id) || !hydroFormat.test(task.hydroPid) || !task.title) ||
       new Set(data.tasks.map(task => task.id)).size !== data.tasks.length ||
       new Set(data.tasks.map(task => task.hydroPid)).size !== data.tasks.length) {
-    throw new ContestError('请填写 1 至 20 道题，每道题的编号与 Hydro 题号须唯一。');
+    throw new ContestError(`请填写 1 至 ${contestTaskLimit} 道题，每道题的编号与 Hydro 题号须唯一。`);
   }
   const previous = store.row('SELECT * FROM contests WHERE slug = ?', data.slug);
   if (Boolean(previous) !== Boolean(args.edit)) throw new ContestError(previous ? '这个比赛编号已存在。' : '比赛不存在。', previous ? 409 : 404);
@@ -325,6 +326,8 @@ function editPage(contest, user, tools) {
       <section class="community-card community-compose">
         <h2>比赛题目</h2>
         <p>引用题库题目时，填写比赛题号即可。自建题目需填写对应的 Hydro 题号、标题和题面。题目顺序与下方一致。</p>
+        ${contest ? '' : `<label>导入比赛草稿（JSON）<input type="file" id="contest-import" accept=".json,application/json"></label>
+          <p id="contest-import-status" role="status" hidden></p>`}
         <details><summary>可引用的站内题目</summary><ul>${options}</ul></details>
         <div class="contest-task-list" id="contest-tasks">${tasks.map(taskEditor).join('')}</div>
         <template id="contest-task-template">${taskEditor()}</template>
@@ -333,9 +336,12 @@ function editPage(contest, user, tools) {
       <button type="submit" class="community-button">保存比赛</button>
     </form>
     <script>(() => {
+      const form = document.getElementById('contest-editor');
       const list = document.getElementById('contest-tasks');
+      const template = document.getElementById('contest-task-template');
+      const limit = ${contestTaskLimit};
       document.getElementById('add-contest-task').addEventListener('click', () => {
-        if (list.children.length < 20) list.append(document.getElementById('contest-task-template').content.cloneNode(true));
+        if (list.children.length < limit) list.append(template.content.cloneNode(true));
       });
       list.addEventListener('click', event => {
         const button = event.target.closest('button');
@@ -344,6 +350,47 @@ function editPage(contest, user, tools) {
         if (button.hasAttribute('data-remove-task')) row.remove();
         if (button.dataset.moveTask === 'up' && row.previousElementSibling) list.insertBefore(row,row.previousElementSibling);
         if (button.dataset.moveTask === 'down' && row.nextElementSibling) list.insertBefore(row.nextElementSibling,row);
+      });
+      const importInput = document.getElementById('contest-import');
+      if (importInput) importInput.addEventListener('change', async () => {
+        const file = importInput.files[0];
+        if (!file) return;
+        const status = document.getElementById('contest-import-status');
+        status.hidden = false;
+        const string = (value, max) => typeof value === 'string' && value.length <= max;
+        try {
+          if (file.size > 1_500_000) throw new Error('文件过大。');
+          const draft = JSON.parse(await file.text());
+          if (!draft || !string(draft.slug,40) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(draft.slug) ||
+              !string(draft.title,100) || !draft.title.trim() || !string(draft.description,20000) ||
+              !Array.isArray(draft.tasks) || !draft.tasks.length || draft.tasks.length > limit ||
+              !draft.tasks.every(task => task && string(task.id,24) && /^[A-Z0-9][A-Z0-9_-]{0,23}$/.test(task.id) &&
+                string(task.hydroPid,64) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(task.hydroPid) &&
+                string(task.title,120) && task.title.trim() && string(task.statementOverride,50000) && task.statementOverride.trim()) ||
+              new Set(draft.tasks.map(task => task.id)).size !== draft.tasks.length ||
+              new Set(draft.tasks.map(task => task.hydroPid)).size !== draft.tasks.length) {
+            throw new Error('文件中的比赛、题目编号或题面无效。');
+          }
+          const rows = document.createDocumentFragment();
+          for (const task of draft.tasks) {
+            const row = template.content.cloneNode(true);
+            row.querySelector('[name=task_id]').value = task.id;
+            row.querySelector('[name=task_pid]').value = task.hydroPid;
+            row.querySelector('[name=task_title]').value = task.title;
+            row.querySelector('[name=task_statement]').value = task.statementOverride;
+            rows.append(row);
+          }
+          form.elements.slug.value = draft.slug;
+          form.elements.title.value = draft.title;
+          form.elements.description.value = draft.description;
+          form.elements.published.checked = false;
+          list.replaceChildren(rows);
+          status.textContent = '已载入 ' + draft.tasks.length + ' 道题。保存后为未公开草稿。';
+        } catch (error) {
+          status.textContent = error instanceof SyntaxError ? '无法读取有效的 JSON。' : error.message;
+        } finally {
+          importInput.value = '';
+        }
       });
     })();</script>`;
 }
@@ -356,8 +403,8 @@ async function readContestEdit(request, user, actor, slug, tools) {
   const pids = form.getAll('task_pid');
   const titles = form.getAll('task_title');
   const statements = form.getAll('task_statement');
-  if (ids.length > 20 || [pids,titles,statements].some(values=>values.length!==ids.length)) {
-    throw new ContestError('题目列表格式无效，最多 20 道题。');
+  if (ids.length > contestTaskLimit || [pids,titles,statements].some(values=>values.length!==ids.length)) {
+    throw new ContestError(`题目列表格式无效，最多 ${contestTaskLimit} 道题。`);
   }
   const tasks = ids.map((value,index) => {
     const id = value.trim().toUpperCase();
