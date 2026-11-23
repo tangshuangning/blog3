@@ -323,6 +323,44 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
 .problem-arrow { color: var(--neon); }
 .problem-detail { max-width: 880px; border-color: #92a7b5; background: var(--paper); color: var(--ink); }
 .site-main.site-main-wide { max-width: 1440px; }
+.problem-actionbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: clamp(24px, 4vw, 48px) auto 14px;
+  padding: 7px;
+  border: 1px solid #4e6a82;
+  border-radius: 8px;
+  background: #122336;
+}
+.problem-actionbar:not(.is-wide) { max-width: 880px; }
+.problem-actionbar + .problem-workspace, .problem-actionbar + .problem-detail { margin-top: 0; }
+.problem-actionbar a, .judge-records-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 5px 12px;
+  border: 1px solid #5c8196;
+  border-radius: 5px;
+  color: #d9f3fb;
+  font-size: .9rem;
+  font-weight: 720;
+  text-decoration: none;
+}
+.problem-actionbar .problem-records-link {
+  background: #a9e7e8;
+  border-color: #a9e7e8;
+  color: #103847;
+}
+.problem-actionbar a:hover, .problem-actionbar a:focus-visible,
+.judge-records-link:hover, .judge-records-link:focus-visible {
+  background: #e0fbfb;
+  color: #123747;
+  border-color: #74c3cb;
+}
+.judge-records-link { background: #e1f0f3; color: #155166; margin-bottom: 14px; }
+#problem-statement, #problem-judge { scroll-margin-top: 108px; }
 .problem-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.16fr) minmax(0, 1fr);
@@ -353,7 +391,7 @@ $-10^9 \\le A, B \\le 10^9$\u3002`,samples:[{input:"3 5",output:"8"},{input:"-7 
   color: var(--ink);
   box-shadow: 0 14px 36px #05091266;
 }
-.judge-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
+.judge-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
 .judge-heading h2 { margin: 0; font-size: 1.35rem; }
 .judge-best {
   padding: 4px 9px;
@@ -1486,10 +1524,11 @@ ${escapeHtml2(p.content||"")}</textarea>
       <button type="button" class="copy-code" data-copy-label="\u590D\u5236" aria-label="\u590D\u5236${escapeHtml2(label)}">\u590D\u5236</button>
     </div>
     <pre><code>${escapeHtml2(value)}</code></pre>
-  </div>`}function problemSubmission(problem,user,contest){const path2=contest?contest.base+"/problems/"+encodeURIComponent(problem.id):"/problems/"+encodeURIComponent(problem.id);const endpoint=contest?.endpoint??"/api"+path2+"/submissions";return`<aside class="problem-judge" aria-labelledby="problem-judge-title">
+  </div>`}function problemSubmission(problem,user,contest,records){const path2=contest?contest.base+"/problems/"+encodeURIComponent(problem.id):"/problems/"+encodeURIComponent(problem.id);const endpoint=contest?.endpoint??"/api"+path2+"/submissions";return`<aside id="problem-judge" class="problem-judge" aria-labelledby="problem-judge-title">
     <div class="judge-heading"><h2 id="problem-judge-title">\u8BC4\u6D4B</h2>
       ${user?'<span class="judge-best">\u6700\u9AD8\u5206 <strong id="judge-best-score">\u2014</strong></span>':""}
     </div>
+    ${records ? `<a class="judge-records-link" href="${records}">查看全部提交 <span aria-hidden="true">&nbsp;↗</span></a>` : ''}
     ${user?`<form id="problem-judge-form" class="problem-judge-form" action="${endpoint}" method="post">
       <div class="judge-language-row">
         <label for="problem-language">\u8BED\u8A00\u7248\u672C</label>
@@ -1511,24 +1550,41 @@ ${escapeHtml2(p.content||"")}</textarea>
       <button type="button" class="btn btn-sm btn-ghost">\u5237\u65B0\u7ED3\u679C</button>
     </div>
     <section class="judge-history" aria-labelledby="judge-history-title">
-      <h3 id="judge-history-title">\u63D0\u4EA4\u5386\u53F2</h3>
+      <h3 id="judge-history-title">我的提交历史</h3>
       <p id="judge-history-message" role="status">\u6B63\u5728\u8BFB\u53D6\u8BB0\u5F55\u2026</p>
       <ol id="judge-history-list" role="list"></ol>
       <button id="judge-history-more" class="btn btn-sm btn-ghost" type="button" hidden>\u67E5\u770B\u66F4\u591A</button>
     </section>`:`<a href="/login?next=${encodeURIComponent(path2)}" class="btn btn-edit">\u767B\u5F55\u540E\u63D0\u4EA4</a>`}
-  </aside>`}function problemPage(problem,user,canSubmit,contest){const{id,title,level,statement,samples}=problem;const samplePairs=samples.map((sample,index)=>`<div class="problem-samples">
+  </aside>`}
+
+function problemPage(problem,user,canSubmit,contest) {
+  const {id,title,level,statement,samples} = problem;
+  const records = problem.hydroPid && !contest ? `/problems/${encodeURIComponent(id)}/records` : '';
+  const actions = records || canSubmit || contest ? `<nav class="problem-actionbar${canSubmit ? ' is-wide' : ''}" aria-label="题目操作">
+    <a href="#problem-statement">题目描述</a>
+    ${canSubmit ? '<a href="#problem-judge">提交答案</a>' : ''}
+    ${records ? `<a class="problem-records-link" href="${records}">提交记录 <span aria-hidden="true">&nbsp;↗</span></a>` : ''}
+    ${contest ? `<a href="${contest.base}/rank">比赛排行榜</a>` : ''}
+  </nav>` : '';
+  const samplePairs = samples.map((sample,index)=>`<div class="problem-samples">
     ${problemSample(`\u6837\u4F8B ${index+1} \u8F93\u5165`,sample.input)}
     ${problemSample(`\u6837\u4F8B ${index+1} \u8F93\u51FA`,sample.output)}
-  </div>`).join("");const statementPanel=`<article class="problem-detail">
+  </div>`).join("");
+  const statementPanel = `<article id="problem-statement" class="problem-detail">
     <nav class="problem-trail" aria-label="\u5F53\u524D\u4F4D\u7F6E"><a href="${contest ? contest.base+"/problems" : "/problems"}">${contest ? escapeHtml2(contest.title) : "\u9898\u5E93"}</a><span aria-hidden="true">/</span><span class="problem-id">${escapeHtml2(id)}</span></nav>
     <h1>${escapeHtml2(title)}</h1>
-    ${contest ? `<p><a href="${contest.base}/rank">查看比赛排行榜</a></p>${!canSubmit ? `<p>${contest.canSubmit ? "评测服务暂未配置。" : contest.registered ? "当前不在比赛提交时段。" : "请在比赛主页报名后提交。"} <a href="${contest.base}">比赛主页</a></p>` : ""}`
-       : problem.hydroPid ? `<p><a href="/problems/${encodeURIComponent(id)}/records">查看本题提交记录</a></p>` : ""}
+    ${contest && !canSubmit ? `<p>${contest.canSubmit ? "评测服务暂未配置。" : contest.registered ? "当前不在比赛提交时段。" : "请在比赛主页报名后提交。"} <a href="${contest.base}">比赛主页</a></p>` : ''}
     <span class="problem-level">${escapeHtml2(level)}</span>
     <div class="prose">${renderArticle(parseArticle(statement))}
       <h2>\u8F93\u5165\u8F93\u51FA\u6837\u4F8B</h2>${samplePairs}
     </div>
-  </article>`;const body=canSubmit?`<div class="problem-workspace">${statementPanel}${problemSubmission(problem,user,contest)}</div>`:statementPanel;const submitScript=canSubmit&&user?`<script>document.addEventListener('DOMContentLoaded', () => {${problemJudgeScript}});<\/script>`:"";return layout({title:`${id} ${title}`,body:body+submitScript,active:contest?"contests":"problems",user,math:true,wide:canSubmit})}function notFoundPage(user){const body=`<section class="not-found">
+  </article>`;
+  const body = canSubmit ? `<div class="problem-workspace">${statementPanel}${problemSubmission(problem,user,contest,records)}</div>` : statementPanel;
+  const submitScript = canSubmit && user ? `<script>document.addEventListener('DOMContentLoaded', () => {${problemJudgeScript}});<\/script>` : '';
+  return layout({title:`${id} ${title}`,body:actions+body+submitScript,active:contest?"contests":"problems",user,math:true,wide:canSubmit});
+}
+
+function notFoundPage(user){const body=`<section class="not-found">
     <h1>404</h1>
     <p>\u4FE1\u53F7\u4E22\u5931\uFF0C\u8FD9\u4E2A\u9875\u9762\u4E0D\u5B58\u5728\u3002</p>
     <a href="/" class="btn btn-edit">\u56DE\u5230\u9996\u9875</a>

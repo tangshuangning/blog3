@@ -105,6 +105,11 @@ function canEdit(actor, row) {
   return actor && (actor.admin || actor.id === row.author);
 }
 
+function canReadPracticeSource(actor, row) {
+  return Boolean(!row.contest && actor &&
+    (actor.admin || actor.id === scope({ key: row.owner, createdAt: row.account_date })));
+}
+
 function itemId(value) {
   const id = Number(value);
   if (!Number.isSafeInteger(id) || id < 1) throw new CommunityError('记录不存在。', 404);
@@ -532,16 +537,19 @@ export class CommunityStore {
         parameters.push(key,createdAt);
       }
       const where = filters.length ? 'WHERE ' + filters.join(' AND ') : '';
-      return paginate(this.rows(`SELECT ${visible} FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid ${where} ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,
+      const result = paginate(this.rows(`SELECT ${visible},r.account_date FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid ${where} ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,
         ...parameters, PAGE_SIZE + 1, (pageNumber(args.page) - 1) * PAGE_SIZE));
+      return { ...result, rows: result.rows.map(row => {
+        const { account_date, ...record } = row;
+        return { ...record, canReadSource: canReadPracticeSource(args.actor, row) };
+      }) };
     }
     if (action !== 'record') throw new CommunityError('操作不存在。', 404);
     const row = this.row(`SELECT ${visible},r.account_date,r.receipt FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid
       WHERE r.rid=? AND (? IS NULL OR r.problem=?)`,args.rid,args.problem || null,args.problem || null);
     if (!row) throw new CommunityError('提交记录不存在。', 404);
     const { receipt, account_date, ...result } = row;
-    const owner = scope({ key: row.owner, createdAt: account_date });
-    return !row.contest && args.actor?.id === owner
+    return canReadPracticeSource(args.actor, row)
       ? { ...result, receipt, accountDate: account_date }
       : result;
   }
@@ -990,7 +998,7 @@ async function renderRecords(env, user, actor, id, rid, page, tools, mine = fals
       if (!result?.source && !codeNote) codeNote = '这条记录暂时没有可显示的源代码。';
     }
     const display = result || row;
-    const code = row.receipt ? `<section class="community-card"><h2>源代码</h2>
+    const code = row.receipt ? `<section class="community-card" id="submission-source"><h2>源代码</h2>
       ${result?.source ? `<pre class="community-code"><code>${htmlEscape(result.source)}</code></pre>` : `<p>${codeNote}</p>`}</section>` : '';
     return communityPage(tools, user, '提交详情', 'problems', heading('提交详情', `<a href="${path}">返回提交记录</a>`) + `
       <div class="community-card">
@@ -1009,16 +1017,18 @@ async function renderRecords(env, user, actor, id, rid, page, tools, mine = fals
   const records = data.rows.map(row => {
     const statusClass = row.status === 1 ? ' is-accepted' : Number.isInteger(row.status) && ![0,20,21,22].includes(row.status) ? ' is-judged' : '';
     const href = row.contest ? '/contests/' + row.contest + '/problems/' + row.problem + '/records/' + row.rid : path + '/' + row.rid;
+    const action = row.canReadSource ? `<a class="community-record-action" href="${href}#submission-source">查看源码</a>`
+      : `<a class="community-record-action" href="${href}">查看详情</a>`;
     return `<tr><td>${threadLink(names.get(row.owner) || row.name)}</td><td>${htmlEscape(row.problem)}</td>
       <td><a href="${href}" class="community-record-verdict${statusClass}">${recordStatus(row)}</a></td>
-      <td>${recordScore(row.score)}</td><td>${htmlEscape(row.language || '—')}</td><td>${date(row.at)}</td></tr>`;
+      <td>${recordScore(row.score)}</td><td>${htmlEscape(row.language || '—')}</td><td>${date(row.at)}</td><td>${action}</td></tr>`;
   }).join('');
   const title = id ? id + ' 提交记录' : '提交记录';
   const tabs = `<nav class="community-tabs" aria-label="提交记录筛选">${selected(!mine,path,'所有人的提交')}
     ${actor ? selected(mine,path+'?view=mine','我的提交') : ''}</nav>`;
   return communityPage(tools, user, title, 'records', heading(title, back) + tabs + `
     <section class="community-card community-table-wrap">
-      ${records ? `<table class="community-table"><thead><tr><th>提交者</th><th>题号</th><th>评测结果</th><th>得分</th><th>语言</th><th>提交时间</th></tr></thead>
+      ${records ? `<table class="community-table"><thead><tr><th>提交者</th><th>题号</th><th>评测结果</th><th>得分</th><th>语言</th><th>提交时间</th><th>操作</th></tr></thead>
         <tbody>${records}</tbody></table>` : '<p class="community-empty">还没有提交记录。</p>'}
     </section>${pageLinks(path + (mine ? '?view=mine' : ''), page, data.more)}`);
 }
@@ -1314,6 +1324,10 @@ export const communityCss = contestCss + `
 .community-record-verdict{font-weight:700}
 .community-record-verdict.is-accepted{color:var(--ink);text-decoration-color:var(--green)}
 .community-record-verdict.is-judged{color:var(--ink);text-decoration-color:var(--pink)}
+.community-record-action{display:inline-block;padding:4px 8px;border:1px solid #83b5bd;border-radius:5px;
+  background:#e4f2f3;color:#124959;font-size:.8rem;font-weight:760;text-decoration:none}
+.community-record-action:hover,.community-record-action:focus-visible{background:#174d5a;color:#f4fbfb}
+#submission-source{scroll-margin-top:108px}
 .community-record-stats{display:flex;gap:12px 22px;flex-wrap:wrap;margin-bottom:0}
 .community-record-stats dt{color:var(--gray);font-size:.82rem}
 .community-record-stats dd{margin:2px 0 0;font-weight:700}
