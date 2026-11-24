@@ -1972,7 +1972,7 @@ function canEditPost(user,post){if(!user)return false;return user.role==="admin"
 }
 
 async function contestJudgeRoute(request,env,user,url) {
-  const route = /^\/api\/contests\/([a-z0-9-]+)\/problems\/([A-Z0-9_-]+)\/(submissions|trial-submissions)(?:\/([0-9a-zA-Z_.-]+))?$/.exec(url.pathname);
+  const route = /^\/api\/contests\/([a-z0-9-]+)\/problems\/([A-Za-z0-9_-]+)\/(submissions|trial-submissions)(?:\/([0-9a-zA-Z_.-]+))?$/.exec(url.pathname);
   if (!route) return null;
   if (!user) return text3("请先登录。",401);
   const [,slug,problem,lane,receipt] = route;

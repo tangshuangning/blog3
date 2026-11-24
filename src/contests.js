@@ -38,10 +38,11 @@ export const statsSchema = [
 ];
 
 const slugFormat = /^[a-z0-9][a-z0-9-]{0,39}$/;
-const idFormat = /^[A-Z0-9][A-Z0-9_-]{0,23}$/;
+const idFormat = /^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$/;
 const hydroFormat = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ridFormat = /^[0-9a-f]{24}$/;
-const contestTaskLimit = 26;
+const contestLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const contestTaskLimit = contestLabels.length;
 const pageSize = 24;
 const pending = [0, 20, 21, 22];
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -104,7 +105,7 @@ function editContest(store, args) {
   if (!data.tasks.length || data.tasks.length > contestTaskLimit ||
       data.tasks.some(task => !idFormat.test(task.id) || !hydroFormat.test(task.hydroPid) || !task.title) ||
       new Set(data.tasks.map(task => task.id)).size !== data.tasks.length ||
-      new Set(data.tasks.map(task => task.hydroPid)).size !== data.tasks.length) {
+      new Set(data.tasks.map(task => task.hydroPid.toLowerCase())).size !== data.tasks.length) {
     throw new ContestError(`请填写 1 至 ${contestTaskLimit} 道题，每道题的编号与 Hydro 题号须唯一。`);
   }
   const previous = store.row('SELECT * FROM contests WHERE slug = ?', data.slug);
@@ -361,8 +362,8 @@ function editPage(contest, user, tools) {
       <section class="community-card community-compose">
         <h2>比赛题目</h2>
         <p>引用题库题目时，填写比赛题号即可。自建题目需填写对应的 Hydro 题号、标题和题面。题目顺序与下方一致。</p>
-        ${contest ? '' : `<label>导入比赛草稿（JSON）<input type="file" id="contest-import" accept=".json,application/json"></label>
-          <p id="contest-import-status" role="status" hidden></p>`}
+        <label>${contest ? '追加题目（JSON）' : '导入比赛草稿（JSON）'}<input type="file" id="contest-import" accept=".json,application/json"></label>
+        <p id="contest-import-status" role="status" hidden></p>
         <details><summary>可引用的站内题目</summary><ul>${options}</ul></details>
         <div class="contest-task-list" id="contest-tasks">${tasks.map(taskEditor).join('')}</div>
         <template id="contest-task-template">${taskEditor()}</template>
@@ -375,6 +376,8 @@ function editPage(contest, user, tools) {
       const list = document.getElementById('contest-tasks');
       const template = document.getElementById('contest-task-template');
       const limit = ${contestTaskLimit};
+      const append = ${Boolean(contest)};
+      const taskId = (value) => /^[a-z]$/.test(value) ? value : value.toUpperCase();
       document.getElementById('add-contest-task').addEventListener('click', () => {
         if (list.children.length < limit) list.append(template.content.cloneNode(true));
       });
@@ -396,15 +399,22 @@ function editPage(contest, user, tools) {
         try {
           if (file.size > 1_500_000) throw new Error('文件过大。');
           const draft = JSON.parse(await file.text());
-          if (!draft || !string(draft.slug,40) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(draft.slug) ||
-              !string(draft.title,100) || !draft.title.trim() || !string(draft.description,20000) ||
-              !Array.isArray(draft.tasks) || !draft.tasks.length || draft.tasks.length > limit ||
-              !draft.tasks.every(task => task && string(task.id,24) && /^[A-Z0-9][A-Z0-9_-]{0,23}$/.test(task.id) &&
+          if (!draft || (!append && (!string(draft.slug,40) || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(draft.slug) ||
+              !string(draft.title,100) || !draft.title.trim() || !string(draft.description,20000))) ||
+              !Array.isArray(draft.tasks) || !draft.tasks.length || draft.tasks.length+(append ? list.children.length : 0)>limit ||
+              !draft.tasks.every(task => task && string(task.id,24) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$/.test(task.id) &&
                 string(task.hydroPid,64) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(task.hydroPid) &&
-                string(task.title,120) && task.title.trim() && string(task.statementOverride,50000) && task.statementOverride.trim()) ||
-              new Set(draft.tasks.map(task => task.id)).size !== draft.tasks.length ||
-              new Set(draft.tasks.map(task => task.hydroPid)).size !== draft.tasks.length) {
+                string(task.title,120) && task.title.trim() && string(task.statementOverride,50000) && task.statementOverride.trim())) {
             throw new Error('文件中的比赛、题目编号或题面无效。');
+          }
+          const ids = [...(append ? list.querySelectorAll('[name=task_id]') : [])].map(input=>taskId(input.value.trim()));
+          const hydroIds = [...(append ? list.querySelectorAll('[name=task_pid]') : [])].map(input=>input.value.trim().toLowerCase()).filter(Boolean);
+          for (const task of draft.tasks) {
+            const id = taskId(task.id);
+            const hydroId = task.hydroPid.toLowerCase();
+            if (ids.includes(id) || hydroIds.includes(hydroId)) throw new Error('题号或 Hydro 题号重复：'+task.id);
+            ids.push(id);
+            hydroIds.push(hydroId);
           }
           const rows = document.createDocumentFragment();
           for (const task of draft.tasks) {
@@ -415,12 +425,17 @@ function editPage(contest, user, tools) {
             row.querySelector('[name=task_statement]').value = task.statementOverride;
             rows.append(row);
           }
-          form.elements.slug.value = draft.slug;
-          form.elements.title.value = draft.title;
-          form.elements.description.value = draft.description;
-          form.elements.published.checked = false;
-          list.replaceChildren(rows);
-          status.textContent = '已载入 ' + draft.tasks.length + ' 道题。保存后为未公开草稿。';
+          if (append) {
+            list.append(rows);
+            status.textContent = '已追加 ' + draft.tasks.length + ' 道题。保存后生效。';
+          } else {
+            form.elements.slug.value = draft.slug;
+            form.elements.title.value = draft.title;
+            form.elements.description.value = draft.description;
+            form.elements.published.checked = false;
+            list.replaceChildren(rows);
+            status.textContent = '已载入 ' + draft.tasks.length + ' 道题。保存后为未公开草稿。';
+          }
         } catch (error) {
           status.textContent = error instanceof SyntaxError ? '无法读取有效的 JSON。' : error.message;
         } finally {
@@ -448,7 +463,8 @@ async function readContestEdit(request, user, actor, slug, tools) {
     throw new ContestError(`题目列表格式无效，最多 ${contestTaskLimit} 道题。`);
   }
   const tasks = ids.map((value,index) => {
-    const id = value.trim().toUpperCase();
+    const rawId = value.trim();
+    const id = /^[a-z]$/.test(rawId) ? rawId : rawId.toUpperCase();
     const catalog = tools.problem(id);
     const hydroPid = pids[index].trim() || catalog?.hydroPid;
     const title = titles[index].trim() || catalog?.title;
@@ -480,7 +496,7 @@ function rankTable(result, contest) {
   const base = path(contest.slug);
   return `<div class="community-card community-table-wrap"><table class="community-table">
     <thead><tr><th>排名</th><th>选手</th><th>总分</th>${contest.tasks.map((task,index)=>
-      `<th><a href="${base}/problems/${task.id}" title="${esc(task.title)}">${String.fromCharCode(65+index)}</a></th>`).join('')}</tr></thead>
+      `<th><a href="${base}/problems/${task.id}" title="${esc(task.title)}">${contestLabels[index]}</a></th>`).join('')}</tr></thead>
     <tbody>${result.rows.map(row => {
       const scores = JSON.parse(row.scores || '{}');
       return `<tr><td>${row.rank}</td><td>${memberLink(row.name)}</td><td><strong>${row.total}</strong></td>${contest.tasks.map(task=>{
@@ -566,7 +582,7 @@ export async function contestPage(request,user,actor,tools) {
   if (section==='problems') {
     return tools.page(user,'比赛题目',head+tabs(contest,'problems',actor)+`
       <section class="community-card community-topic-list">${contest.canReadTasks ? contest.tasks.map((task,index)=>
-        `<article class="community-topic"><a class="community-topic-title" href="${base}/problems/${task.id}">${String.fromCharCode(65+index)}. ${esc(task.title)}</a></article>`).join('') :
+        `<article class="community-topic"><a class="community-topic-title" href="${base}/problems/${task.id}">${contestLabels[index]}. ${esc(task.title)}</a></article>`).join('') :
         '<p>比赛开始后可查看题目。</p>'}</section>`);
   }
   if (section==='rank') {
@@ -582,7 +598,7 @@ export async function contestPage(request,user,actor,tools) {
     const auditPath = base + '/audit?problem=' + problem + '&user=' + encodeURIComponent(target);
     return tools.page(user,'比赛提交记录',head+tabs(contest,'rank',actor)+judgeTable(result.rows,contest,task,target)+paged(auditPath,page,result.more));
   }
-  const detail = /^problems\/([A-Z0-9_-]+)(?:\/records\/([0-9a-f]+))?$/.exec(section);
+  const detail = /^problems\/([A-Za-z0-9_-]+)(?:\/records\/([0-9a-f]+))?$/.exec(section);
   if (!detail) throw new ContestError('页面不存在。',404);
   if (!contest.canReadTasks) throw new ContestError('比赛尚未开始。',403);
   if (detail[2]) return tools.page(user,'比赛提交详情',await showAttempt(contest,detail[1],detail[2],actor,tools));
