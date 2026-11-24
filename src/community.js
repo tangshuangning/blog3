@@ -151,7 +151,7 @@ export class CommunityStore {
     const args = await request.json();
     try {
       if (area === 'records') {
-        this.initialize([...recordsSchema, ...contestSchema]);
+        this.initializeRecords();
         if (action.startsWith('contest-')) {
           const output = storedContest(this, action.slice(8), args);
           if (action === 'contest-attach' || action === 'contest-complete') await scheduleJudgeRefresh(this);
@@ -184,16 +184,26 @@ export class CommunityStore {
     }
   }
 
-  initialize(statements) {
+  initialize(statements, migrate) {
     if (this.initialized) return;
     this.ctx.storage.transactionSync(() => {
       for (const statement of statements) this.sql.exec(statement);
+      migrate?.();
     });
     this.initialized = true;
   }
 
+  initializeRecords() {
+    this.initialize([...recordsSchema, ...contestSchema], () => {
+      const columns = this.rows('PRAGMA table_info(contest_attempts)');
+      if (!columns.some(column => column.name === 'trial')) {
+        this.sql.exec('ALTER TABLE contest_attempts ADD COLUMN trial INTEGER NOT NULL DEFAULT 0');
+      }
+    });
+  }
+
   async refreshJudges(hydroSettings, resultFromHydro) {
-    this.initialize([...recordsSchema, ...contestSchema]);
+    this.initializeRecords();
     await refreshPendingJudges(this,this.env,hydroSettings,resultFromHydro);
   }
 
@@ -525,7 +535,7 @@ export class CommunityStore {
     }
     const visible = 'r.rid, r.problem, r.owner, r.name, r.at, r.status, r.verdict, r.score, r.language, r.time_ms, r.memory_kib, a.contest';
     if (action === 'list') {
-      const filters = [];
+      const filters = ['coalesce(a.trial,0)=0'];
       const parameters = [];
       if (args.problem) {
         filters.push('r.problem=?');
@@ -536,8 +546,8 @@ export class CommunityStore {
         filters.push('r.owner=? AND r.account_date=?');
         parameters.push(key,createdAt);
       }
-      const where = filters.length ? 'WHERE ' + filters.join(' AND ') : '';
-      const result = paginate(this.rows(`SELECT ${visible},r.account_date FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid ${where} ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,
+      const result = paginate(this.rows(`SELECT ${visible},r.account_date FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid
+        WHERE ${filters.join(' AND ')} ORDER BY r.at DESC,r.rid DESC LIMIT ? OFFSET ?`,
         ...parameters, PAGE_SIZE + 1, (pageNumber(args.page) - 1) * PAGE_SIZE));
       return { ...result, rows: result.rows.map(row => {
         const { account_date, ...record } = row;
@@ -546,7 +556,7 @@ export class CommunityStore {
     }
     if (action !== 'record') throw new CommunityError('操作不存在。', 404);
     const row = this.row(`SELECT ${visible},r.account_date,r.receipt FROM records r LEFT JOIN contest_attempts a ON a.rid=r.rid
-      WHERE r.rid=? AND (? IS NULL OR r.problem=?)`,args.rid,args.problem || null,args.problem || null);
+      WHERE r.rid=? AND coalesce(a.trial,0)=0 AND (? IS NULL OR r.problem=?)`,args.rid,args.problem || null,args.problem || null);
     if (!row) throw new CommunityError('提交记录不存在。', 404);
     const { receipt, account_date, ...result } = row;
     return canReadPracticeSource(args.actor, row)

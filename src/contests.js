@@ -16,8 +16,13 @@ export const contestSchema = [
     contest TEXT NOT NULL, actor TEXT NOT NULL, name TEXT NOT NULL, joined INTEGER NOT NULL,
     PRIMARY KEY(contest, actor)
   )`,
+  `CREATE TABLE IF NOT EXISTS contest_staff (
+    contest TEXT NOT NULL, actor TEXT NOT NULL, name TEXT NOT NULL,
+    PRIMARY KEY(contest, actor)
+  )`,
   `CREATE TABLE IF NOT EXISTS contest_attempts (
-    rid TEXT PRIMARY KEY, contest TEXT NOT NULL, actor TEXT NOT NULL, problem TEXT NOT NULL
+    rid TEXT PRIMARY KEY, contest TEXT NOT NULL, actor TEXT NOT NULL, problem TEXT NOT NULL,
+    trial INTEGER NOT NULL DEFAULT 0
   )`,
   'CREATE INDEX IF NOT EXISTS contest_attempts_member ON contest_attempts(contest, actor, problem, rid DESC)',
   'CREATE INDEX IF NOT EXISTS records_recent ON records(at DESC, rid DESC)',
@@ -46,24 +51,29 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[ch]);
 
-export function contestPurpose(slug, id) {
-  return 'contest:' + slug + ':' + id;
+export function contestPurpose(slug, id, trial = false) {
+  return (trial ? 'contest-trial:' : 'contest:') + slug + ':' + id;
 }
 
 function path(slug) { return '/contests/' + slug; }
 function account(row) { return JSON.stringify([row.owner, row.account_date]); }
-function manager(contest, actor) { return Boolean(actor && (actor.admin || contest.organizer === actor.id)); }
+function manager(contest, actor) {
+  return Boolean(actor && (actor.root || contest.organizer === actor.id || contest.staff.some(member => member.actor === actor.id)));
+}
 function rootOnly(actor) {
   if (!actor?.root) throw new ContestError('只有站主可以管理比赛。', actor ? 403 : 401);
 }
 function mustManager(contest, actor) {
-  if (!manager(contest, actor)) throw new ContestError('只有这场比赛的组织者和管理员可以查看。', actor ? 403 : 401);
+  if (!manager(contest, actor)) throw new ContestError('只有站主和本场指定的比赛管理可以访问。', actor ? 403 : 401);
 }
 function getContest(store, slug, actor) {
   if (!slugFormat.test(slug)) throw new ContestError('比赛不存在。', 404);
   const contest = store.row('SELECT * FROM contests WHERE slug = ?', slug);
-  if (!contest || (!contest.published && !manager(contest, actor))) throw new ContestError('比赛不存在。', 404);
-  return { ...contest, tasks: JSON.parse(contest.tasks) };
+  if (!contest) throw new ContestError('比赛不存在。', 404);
+  const staff = actor ? store.rows('SELECT actor,name FROM contest_staff WHERE contest=? ORDER BY name', slug) : [];
+  const details = { ...contest, staff };
+  if (!details.published && !manager(details, actor)) throw new ContestError('比赛不存在。', 404);
+  return { ...details, tasks: JSON.parse(details.tasks) };
 }
 function getTask(contest, id) {
   const task = contest.tasks.find(item => item.id === id);
@@ -72,6 +82,9 @@ function getTask(contest, id) {
 }
 function canReadTasks(contest, actor, now = Date.now()) {
   return manager(contest, actor) || (contest.published && now >= contest.starts);
+}
+function canTrial(contest, actor, now = Date.now()) {
+  return manager(contest, actor) && (!contest.published || now < contest.starts);
 }
 function timePage(value) { return Math.min(500, Math.max(1, Number.parseInt(value, 10) || 1)); }
 function pageRows(store, query, params, page) {
@@ -108,12 +121,22 @@ function editContest(store, args) {
     }
     if (!data.published) throw new ContestError('已开始的比赛不能撤回为草稿。', 409);
   }
-  store.sql.exec(`INSERT INTO contests(slug,title,description,tasks,organizer,organizer_name,starts,ends,published,updated)
+  store.ctx.storage.transactionSync(() => {
+    store.sql.exec(`INSERT INTO contests(slug,title,description,tasks,organizer,organizer_name,starts,ends,published,updated)
     VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET
     title=excluded.title,description=excluded.description,tasks=excluded.tasks,organizer=excluded.organizer,
     organizer_name=excluded.organizer_name,starts=excluded.starts,ends=excluded.ends,published=excluded.published,updated=excluded.updated`,
     data.slug, data.title, data.description, taskList, data.organizer.id, data.organizer.name,
-    data.starts, data.ends, Number(data.published), Date.now());
+      data.starts, data.ends, Number(data.published), Date.now());
+    if (data.staff) {
+      store.sql.exec('DELETE FROM contest_staff WHERE contest=?', data.slug);
+      for (const member of data.staff) {
+        if (member.id !== data.organizer.id) {
+          store.sql.exec('INSERT OR IGNORE INTO contest_staff(contest,actor,name) VALUES (?,?,?)', data.slug,member.id,member.name);
+        }
+      }
+    }
+  });
   return {};
 }
 
@@ -121,7 +144,7 @@ function scoreRows(store, contest, page) {
   return pageRows(store, `WITH best AS (
     SELECT a.actor, a.problem, max(r.score) AS score
       FROM contest_attempts a JOIN records r ON r.rid=a.rid
-      WHERE a.contest=? AND r.status NOT IN (0,20,21,22) AND r.score IS NOT NULL GROUP BY a.actor,a.problem
+      WHERE a.contest=? AND a.trial=0 AND r.status NOT IN (0,20,21,22) AND r.score IS NOT NULL GROUP BY a.actor,a.problem
     ), totals AS (
       SELECT actor, sum(score) AS total, json_group_object(problem,score) AS scores FROM best GROUP BY actor
     ), ranking AS (
@@ -134,18 +157,21 @@ function scoreRows(store, contest, page) {
 export function storedContest(store, action, args) {
   const { actor } = args;
   if (action === 'list') {
-    return pageRows(store,`SELECT slug,title,organizer_name,starts,ends,published FROM contests
-      WHERE published=1 OR organizer=? OR ?=1 ORDER BY starts DESC,slug`, [actor?.id ?? '', Number(Boolean(actor?.admin))], args.page);
+    return pageRows(store,`SELECT slug,title,organizer_name,starts,ends,published FROM contests c
+      WHERE published=1 OR organizer=? OR ?=1 OR EXISTS(
+        SELECT 1 FROM contest_staff s WHERE s.contest=c.slug AND s.actor=?
+      ) ORDER BY starts DESC,slug`, [actor?.id ?? '', Number(Boolean(actor?.root)), actor?.id ?? ''], args.page);
   }
   if (action === 'edit') return editContest(store, args);
   const contest = getContest(store, args.slug, actor);
   const member = actor && Boolean(store.row('SELECT 1 FROM contest_members WHERE contest=? AND actor=?', contest.slug, actor.id));
   if (action === 'get') {
+    const { staff, ...details } = contest;
     const tasksVisible = canReadTasks(contest, actor);
     return {
-      ...contest, tasks: !tasksVisible ? [] : args.full ? contest.tasks :
+      ...details, staff: actor?.root && args.full ? staff : [], tasks: !tasksVisible ? [] : args.full ? contest.tasks :
         contest.tasks.map(({id,title,hydroPid}) => ({id,title,hydroPid})),
-      member, management: manager(contest, actor), canReadTasks: tasksVisible,
+      member, management: manager(contest, actor), canReadTasks: tasksVisible, canTrial: canTrial(contest, actor),
     };
   }
   if (action === 'join') {
@@ -162,14 +188,20 @@ export function storedContest(store, action, args) {
     mustManager(contest, actor);
     getTask(contest, args.problem);
     return pageRows(store, `SELECT r.rid,r.name,r.status,r.verdict,r.score,r.language,r.at FROM contest_attempts a JOIN records r ON r.rid=a.rid
-      WHERE a.contest=? AND a.actor=? AND a.problem=? ORDER BY r.at DESC,r.rid DESC`,
+      WHERE a.contest=? AND a.actor=? AND a.problem=? AND a.trial=0 ORDER BY r.at DESC,r.rid DESC`,
       [contest.slug,args.target,args.problem],args.page);
   }
+  const trial = Number(args.trial === true);
+  if (trial) mustManager(contest, actor);
   const task = getTask(contest, args.problem);
   if (action === 'task') return { task: { hydroPid:task.hydroPid } };
   if (action === 'gate') {
     if (!actor) throw new ContestError('请先登录。', 401);
     const now = Date.now();
+    if (trial) {
+      if (!canTrial(contest, actor, now)) throw new ContestError('赛前试判已关闭。', 403);
+      return { task: { hydroPid:task.hydroPid }, at: now };
+    }
     if (!contest.published || now < contest.starts || now >= contest.ends) throw new ContestError('当前不在比赛提交时段。', 403);
     if (!member) throw new ContestError('请先报名参加比赛。', 403);
     return { task: { hydroPid:task.hydroPid }, at: now };
@@ -177,30 +209,30 @@ export function storedContest(store, action, args) {
   if (action === 'history') {
     if (!actor) throw new ContestError('请先登录。', 401);
     const { rows, more } = pageRows(store, `SELECT r.receipt,r.at AS submittedAt,r.verdict,r.status,r.score,r.language FROM contest_attempts a JOIN records r ON r.rid=a.rid
-      WHERE a.contest=? AND a.actor=? AND a.problem=? ORDER BY r.at DESC,r.rid DESC`,
-      [contest.slug,actor.id,task.id],args.page);
+      WHERE a.contest=? AND a.actor=? AND a.problem=? AND a.trial=? ORDER BY r.at DESC,r.rid DESC`,
+      [contest.slug,actor.id,task.id,trial],args.page);
     const best = store.row(`SELECT max(r.score) AS highest FROM contest_attempts a JOIN records r ON r.rid=a.rid
-      WHERE a.contest=? AND a.actor=? AND a.problem=? AND r.status NOT IN (0,20,21,22)`, contest.slug,actor.id,task.id);
+      WHERE a.contest=? AND a.actor=? AND a.problem=? AND a.trial=? AND r.status NOT IN (0,20,21,22)`, contest.slug,actor.id,task.id,trial);
     return { records: rows.map(row=>({...row,verdict:row.verdict || '等待评测结果',pending:row.status === null || pending.includes(row.status)})),
       highest:best.highest, cursor:more ? String(timePage(args.page)+1) : null };
   }
   if (action === 'attach') {
-    if (!member || !contest.published || args.row.at < contest.starts || args.row.at >= contest.ends ||
-        account({owner:args.row.owner,account_date:args.row.accountDate}) !== actor.id) {
+    if (account({owner:args.row.owner,account_date:args.row.accountDate}) !== actor?.id ||
+        (!trial && (!member || !contest.published || args.row.at < contest.starts || args.row.at >= contest.ends))) {
       throw new ContestError('这次提交无法计入本场比赛。', 409);
     }
     store.ctx.storage.transactionSync(() => {
       store.insertRecord(args.row);
-      store.sql.exec('INSERT OR IGNORE INTO contest_attempts(rid,contest,actor,problem) VALUES (?,?,?,?)',
-        args.row.rid,contest.slug,actor.id,task.id);
+      store.sql.exec('INSERT OR IGNORE INTO contest_attempts(rid,contest,actor,problem,trial) VALUES (?,?,?,?,?)',
+        args.row.rid,contest.slug,actor.id,task.id,trial);
       store.sql.exec('INSERT OR IGNORE INTO judge_refresh(rid,pid,due) VALUES (?,?,?)',args.row.rid,task.hydroPid,Date.now()+1200);
     });
     return {};
   }
   if (action === 'complete') {
-    const existing = store.row('SELECT contest,actor,problem FROM contest_attempts WHERE rid=?',args.row.rid);
+    const existing = store.row('SELECT contest,actor,problem,trial FROM contest_attempts WHERE rid=?',args.row.rid);
     if (!existing) return storedContest(store,'attach',args);
-    if (existing.contest !== contest.slug || existing.actor !== actor?.id || existing.problem !== task.id) {
+    if (existing.contest !== contest.slug || existing.actor !== actor?.id || existing.problem !== task.id || existing.trial !== trial) {
       throw new ContestError('找不到这次比赛提交。',404);
     }
     store.ctx.storage.transactionSync(() => {
@@ -213,7 +245,7 @@ export function storedContest(store, action, args) {
   }
   if (action !== 'record') throw new ContestError('页面不存在。', 404);
   const row = store.row(`SELECT r.* FROM contest_attempts a JOIN records r ON r.rid=a.rid
-    WHERE a.contest=? AND a.problem=? AND a.rid=?`,contest.slug,task.id,args.rid);
+    WHERE a.contest=? AND a.problem=? AND a.rid=? AND a.trial=0`,contest.slug,task.id,args.rid);
   if (!row) throw new ContestError('找不到这次比赛提交。', 404);
   const {receipt, account_date, ...visible} = row;
   const mayRead = Boolean(actor && (account(row) === actor.id || manager(contest, actor)));
@@ -228,7 +260,7 @@ export async function scheduleJudgeRefresh(store) {
 }
 
 export async function refreshPendingJudges(store, env, hydroSettings, resultFromHydro) {
-  const jobs = store.rows(`SELECT q.rid,q.pid,q.tries,r.owner,r.account_date,r.receipt,r.status,a.contest,a.problem
+  const jobs = store.rows(`SELECT q.rid,q.pid,q.tries,r.owner,r.account_date,r.receipt,r.status,a.contest,a.problem,a.trial
     FROM judge_refresh q JOIN records r ON r.rid=q.rid LEFT JOIN contest_attempts a ON a.rid=q.rid
     WHERE q.due<=? ORDER BY q.due LIMIT 12`,Date.now());
   const settings = hydroSettings(env);
@@ -240,7 +272,7 @@ export async function refreshPendingJudges(store, env, hydroSettings, resultFrom
     }
     try {
       const result = settings && await resultFromHydro(settings,{key:job.owner,createdAt:job.account_date},job.pid,job.receipt,false,
-        job.contest ? contestPurpose(job.contest,job.problem) : job.pid);
+        job.contest ? contestPurpose(job.contest,job.problem,job.trial === 1) : job.pid);
       if (result && !result.pending) {
         store.sql.exec(`UPDATE records SET status=?,verdict=?,score=?,language=COALESCE(?,language),time_ms=?,memory_kib=? WHERE rid=?`,
           result.status,result.verdict,result.score,result.language ?? null,result.timeMs,result.memoryKiB,rid);
@@ -316,6 +348,9 @@ function editPage(contest, user, tools) {
         <label>比赛编号<input name="slug" required maxlength="40" pattern="[a-z0-9][a-z0-9-]{0,39}" ${contest ? 'readonly' : ''} value="${esc(contest?.slug)}"></label>
         <label>比赛名称<input name="title" required maxlength="100" value="${esc(contest?.title)}"></label>
         <label>组织者用户名<input name="organizer" required maxlength="20" value="${esc(contest?.organizer_name || user.username)}"></label>
+        <label>其他比赛管理用户名<input name="staff" maxlength="300" value="${esc(contest?.staff.map(member => member.name).join('、'))}"
+          placeholder="可留空，多人用逗号或空格分隔"></label>
+        <p>站主、组织者和这里指定的比赛管理可以赛前看题并试判。</p>
         <div class="contest-form-times">
           <label>开始时间（北京时间）<input type="datetime-local" name="starts" required value="${localInput(starts)}"></label>
           <label>结束时间（北京时间）<input type="datetime-local" name="ends" required value="${localInput(ends)}"></label>
@@ -399,6 +434,12 @@ async function readContestEdit(request, user, actor, slug, tools) {
   rootOnly(actor);
   const form = await tools.readForm(request,3_000_000);
   const organizer = await tools.targetAccount(form.get('organizer')?.trim() || user.username);
+  let staff;
+  if (form.has('staff')) {
+    const names = [...new Set(form.get('staff').split(/[\s,，、]+/).filter(Boolean))];
+    if (names.length > 12) throw new ContestError('最多指定 12 名其他比赛管理。');
+    staff = await Promise.all(names.map(name => tools.targetAccount(name)));
+  }
   const ids = form.getAll('task_id');
   const pids = form.getAll('task_pid');
   const titles = form.getAll('task_title');
@@ -420,7 +461,7 @@ async function readContestEdit(request, user, actor, slug, tools) {
   });
   const description = form.get('description') || '';
   if (description.length>20000) throw new ContestError('比赛介绍过长。');
-  const data = { slug:slug || (form.get('slug')||'').trim(),title:(form.get('title')||'').trim(),organizer,tasks,description,
+  const data = { slug:slug || (form.get('slug')||'').trim(),title:(form.get('title')||'').trim(),organizer,staff,tasks,description,
     starts:fromInput(form.get('starts')),ends:fromInput(form.get('ends')),published:form.get('published')==='1' };
   await tools.store('edit',{actor,data,edit:Boolean(slug)});
   return tools.redirect(path(data.slug));
@@ -534,11 +575,10 @@ export async function contestPage(request,user,actor,tools) {
       '<div class="community-card">比赛开始后开放排行榜。</div>'));
   }
   if (section==='audit') {
-    mustManager(contest,actor);
     const problem = url.searchParams.get('problem') || '';
     const target = url.searchParams.get('user') || '';
-    const task = getTask(contest,problem);
     const result = await tools.store('audit',{slug,actor,problem,target,page});
+    const task = getTask(contest,problem);
     const auditPath = base + '/audit?problem=' + problem + '&user=' + encodeURIComponent(target);
     return tools.page(user,'比赛提交记录',head+tabs(contest,'rank',actor)+judgeTable(result.rows,contest,task,target)+paged(auditPath,page,result.more));
   }
@@ -550,10 +590,11 @@ export async function contestPage(request,user,actor,tools) {
   const catalog = tools.problem(task.id);
   const problem = { id:task.id,title:task.title,hydroPid:task.hydroPid,level:'比赛题目',
     statement:task.statementOverride || catalog?.statement || '',samples:task.statementOverride ? [] : catalog?.samples || [] };
-  const canSubmit = contest.member && contest.published && Date.now()>=contest.starts && Date.now()<contest.ends;
+  const trial = contest.canTrial;
+  const canSubmit = trial || (contest.member && contest.published && Date.now()>=contest.starts && Date.now()<contest.ends);
   return tools.html(tools.problemPage(problem,user,Boolean(canSubmit && tools.hydroSettings()),{
-    base, endpoint:'/api'+base+'/problems/'+task.id+'/submissions', title:contest.title, registered:contest.member,
-    canSubmit,
+    base, endpoint:'/api'+base+'/problems/'+task.id+(trial ? '/trial-submissions' : '/submissions'),
+    title:contest.title, registered:contest.member, canSubmit, trial,
   }));
 }
 
