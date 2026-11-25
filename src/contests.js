@@ -93,6 +93,15 @@ function pageRows(store, query, params, page) {
   return { rows: rows.slice(0, pageSize), more: rows.length > pageSize };
 }
 
+// One-time A–Z to A–Z plus a–q migration for the running NOIP practice contest.
+function noipExtension(previous, before, after, now) {
+  return previous.slug === 'noip-template' && now < previous.ends && before.length === 26 && after.length === 43 &&
+    before.every((task, index) => task.id === contestLabels[index] && task.hydroPid === `NOIPTPL${task.id}` &&
+      after[index].id === task.id && after[index].hydroPid === task.hydroPid) &&
+    after.slice(26).every((task, index) => task.id === contestLabels[index + 26] &&
+      task.hydroPid === `NOIPX${String(index + 1).padStart(2, '0')}` && task.statementOverride);
+}
+
 function editContest(store, args) {
   rootOnly(args.actor);
   const data = args.data;
@@ -114,13 +123,22 @@ function editContest(store, args) {
   if (new TextEncoder().encode(taskList).byteLength > 1_500_000) {
     throw new ContestError('题目列表内容过长，请精简部分题面。',413);
   }
-  if (previous?.published && Date.now() >= previous.starts) {
-    const before = JSON.parse(previous.tasks).map(task => [task.id, task.hydroPid]);
+  const now = Date.now();
+  if (previous?.published && now >= previous.starts) {
+    if (!data.published) throw new ContestError('已开始的比赛不能撤回为草稿。', 409);
+    const before = JSON.parse(previous.tasks);
+    const sameSchedule = previous.starts === data.starts && previous.ends === data.ends;
+    if (sameSchedule && noipExtension(previous, before, data.tasks, now)) {
+      const combined = JSON.stringify([...before, ...data.tasks.slice(before.length)]);
+      store.sql.exec('UPDATE contests SET description=?, tasks=?, updated=? WHERE slug=?',
+        data.description, combined, now, data.slug);
+      return {};
+    }
+    const beforeIds = before.map(task => [task.id, task.hydroPid]);
     const after = data.tasks.map(task => [task.id, task.hydroPid]);
-    if (previous.starts !== data.starts || previous.ends !== data.ends || JSON.stringify(before) !== JSON.stringify(after)) {
+    if (!sameSchedule || JSON.stringify(beforeIds) !== JSON.stringify(after)) {
       throw new ContestError('已开始的比赛可以更新介绍及题面，赛程与题目编号已锁定。', 409);
     }
-    if (!data.published) throw new ContestError('已开始的比赛不能撤回为草稿。', 409);
   }
   store.ctx.storage.transactionSync(() => {
     store.sql.exec(`INSERT INTO contests(slug,title,description,tasks,organizer,organizer_name,starts,ends,published,updated)
